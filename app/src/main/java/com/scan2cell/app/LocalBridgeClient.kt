@@ -158,7 +158,7 @@ class LocalBridgeClient(private val context: Context) {
             socket.soTimeout = 1100
 
             val targets = linkedSetOf(InetAddress.getByName("255.255.255.255"))
-            wifiBroadcastAddress()?.let(targets::add)
+            wifiBroadcastAddress()?.let { address -> targets.add(address) }
 
             repeat(4) {
                 for (target in targets) {
@@ -216,8 +216,10 @@ class LocalBridgeClient(private val context: Context) {
         return runCatching {
             val wifi = context.applicationContext
                 .getSystemService(Context.WIFI_SERVICE) as WifiManager
-            val dhcp = wifi.dhcpInfo ?: return null
-            val broadcast = (dhcp.ipAddress and dhcp.netmask) or dhcp.netmask.inv()
+            val dhcp = wifi.dhcpInfo
+                ?: return@runCatching null
+            val broadcast =
+                (dhcp.ipAddress and dhcp.netmask) or dhcp.netmask.inv()
             val bytes = ByteArray(4) { index ->
                 ((broadcast shr (index * 8)) and 0xFF).toByte()
             }

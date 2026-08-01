@@ -5,7 +5,6 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
-import android.provider.Settings
 import android.view.View
 import android.view.inputmethod.InputMethodManager
 import androidx.activity.result.contract.ActivityResultContracts
@@ -334,12 +333,13 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun deviceName(): String =
-        "${Build.MANUFACTURER.replaceFirstChar { it.uppercase() }} ${Build.MODEL}".trim()
-            .ifBlank {
-                Settings.Global.getString(contentResolver, Settings.Global.DEVICE_NAME)
-                    ?: "Android phone"
-            }
+    private fun deviceName(): String {
+        val manufacturer = Build.MANUFACTURER
+            .replaceFirstChar { character -> character.uppercase() }
+        return "$manufacturer ${Build.MODEL}"
+            .trim()
+            .ifBlank { "Android phone" }
+    }
 
     companion object {
         private const val KEY_BASE_URL = "baseUrl"

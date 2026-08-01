@@ -17,19 +17,18 @@ import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
 import androidx.camera.core.ImageProxy
 import androidx.camera.core.Preview
-import androidx.camera.core.toBitmap
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.core.content.ContextCompat
-import com.google.android.gms.tasks.Tasks
 import com.google.android.material.snackbar.Snackbar
+import com.google.mlkit.vision.barcode.Barcode
 import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.text.Text
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import com.scan2cell.app.databinding.ActivityScannerBinding
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
-import kotlin.math.max
 
 class ScannerActivity : AppCompatActivity() {
     private lateinit var binding: ActivityScannerBinding
@@ -43,11 +42,15 @@ class ScannerActivity : AppCompatActivity() {
     private val textRecognizer by lazy {
         TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
     }
-    private val barcodeScanner by lazy { BarcodeScanning.getClient() }
+    private val barcodeScanner by lazy {
+        BarcodeScanning.getClient()
+    }
 
     private val permissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-            if (granted) startCamera() else {
+            if (granted) {
+                startCamera()
+            } else {
                 showMessage("Camera permission is required.")
                 finish()
             }
@@ -61,7 +64,11 @@ class ScannerActivity : AppCompatActivity() {
         cameraExecutor = Executors.newSingleThreadExecutor()
 
         binding.backButton.setOnClickListener {
-            if (binding.resultContainer.visibility == View.VISIBLE) showCameraMode() else finish()
+            if (binding.resultContainer.visibility == View.VISIBLE) {
+                showCameraMode()
+            } else {
+                finish()
+            }
         }
         binding.flashButton.setOnClickListener { toggleTorch() }
         binding.captureButton.setOnClickListener { captureInMemory() }
@@ -70,23 +77,33 @@ class ScannerActivity : AppCompatActivity() {
 
         binding.wordOverlay.setOnItemSelected { item ->
             binding.resultText.setText(item.text)
-            binding.resultText.setSelection(binding.resultText.text?.length ?: 0)
+            binding.resultText.setSelection(item.text.length)
             binding.scannerSubtitle.text =
-                if (item.kind == WordOverlayView.Kind.BARCODE) "Barcode selected" else "Word selected"
+                if (item.kind == WordOverlayView.Kind.BARCODE) {
+                    "Barcode selected"
+                } else {
+                    "Word selected"
+                }
             binding.useButton.isEnabled = item.text.isNotBlank()
         }
 
-        binding.resultText.addTextChangedListener(SimpleTextWatcher {
-            binding.useButton.isEnabled = binding.resultText.text?.toString()?.trim()?.isNotEmpty() == true
-        })
+        binding.resultText.addTextChangedListener(
+            SimpleTextWatcher {
+                binding.useButton.isEnabled =
+                    !binding.resultText.text?.toString()?.trim().isNullOrEmpty()
+            }
+        )
 
         requestCamera()
     }
 
     private fun requestCamera() {
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) ==
-            PackageManager.PERMISSION_GRANTED
-        ) {
+        val granted = ContextCompat.checkSelfPermission(
+            this,
+            Manifest.permission.CAMERA
+        ) == PackageManager.PERMISSION_GRANTED
+
+        if (granted) {
             startCamera()
         } else {
             permissionLauncher.launch(Manifest.permission.CAMERA)
@@ -95,35 +112,40 @@ class ScannerActivity : AppCompatActivity() {
 
     private fun startCamera() {
         val providerFuture = ProcessCameraProvider.getInstance(this)
-        providerFuture.addListener({
-            try {
-                val provider = providerFuture.get()
-                val preview = Preview.Builder().build().also {
-                    it.setSurfaceProvider(binding.previewView.surfaceProvider)
+        providerFuture.addListener(
+            {
+                try {
+                    val provider = providerFuture.get()
+                    val preview = Preview.Builder()
+                        .build()
+                        .also { it.setSurfaceProvider(binding.previewView.surfaceProvider) }
+
+                    imageCapture = ImageCapture.Builder()
+                        .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
+                        .setTargetRotation(
+                            binding.previewView.display?.rotation ?: Surface.ROTATION_0
+                        )
+                        .build()
+
+                    provider.unbindAll()
+                    camera = provider.bindToLifecycle(
+                        this,
+                        CameraSelector.DEFAULT_BACK_CAMERA,
+                        preview,
+                        imageCapture
+                    )
+                } catch (error: Exception) {
+                    showMessage("Camera could not start: ${error.message}")
                 }
-
-                imageCapture = ImageCapture.Builder()
-                    .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
-                    .setJpegQuality(92)
-                    .setTargetRotation(binding.previewView.display?.rotation ?: Surface.ROTATION_0)
-                    .build()
-
-                provider.unbindAll()
-                camera = provider.bindToLifecycle(
-                    this,
-                    CameraSelector.DEFAULT_BACK_CAMERA,
-                    preview,
-                    imageCapture
-                )
-            } catch (error: Exception) {
-                showMessage("Camera could not start: ${error.message}")
-            }
-        }, ContextCompat.getMainExecutor(this))
+            },
+            ContextCompat.getMainExecutor(this)
+        )
     }
 
     private fun captureInMemory() {
         val capture = imageCapture ?: return
-        capture.targetRotation = binding.previewView.display?.rotation ?: Surface.ROTATION_0
+        capture.targetRotation =
+            binding.previewView.display?.rotation ?: Surface.ROTATION_0
 
         showLoading(true, "Reading words and codes…")
         binding.captureButton.isEnabled = false
@@ -133,24 +155,28 @@ class ScannerActivity : AppCompatActivity() {
             object : ImageCapture.OnImageCapturedCallback() {
                 override fun onCaptureSuccess(image: ImageProxy) {
                     try {
-                        val rotation = image.imageInfo.rotationDegrees
                         val bitmap = image.toBitmap()
-                        val upright = rotateBitmap(bitmap, rotation)
-                        image.close()
+                        val upright = rotateBitmap(
+                            source = bitmap,
+                            degrees = image.imageInfo.rotationDegrees
+                        )
 
                         runOnUiThread {
-                            capturedBitmap?.takeIf { it !== upright && !it.isRecycled }?.recycle()
+                            recycleCapturedBitmapExcept(upright)
                             capturedBitmap = upright
                             binding.capturedImage.setImageBitmap(upright)
                             analyzeBitmap(upright)
                         }
                     } catch (error: Exception) {
-                        image.close()
                         runOnUiThread {
                             showLoading(false)
                             binding.captureButton.isEnabled = true
-                            showMessage("Could not read the captured image: ${error.message}")
+                            showMessage(
+                                "Could not read the captured image: ${error.message}"
+                            )
                         }
+                    } finally {
+                        image.close()
                     }
                 }
 
@@ -166,78 +192,136 @@ class ScannerActivity : AppCompatActivity() {
     }
 
     private fun analyzeBitmap(bitmap: Bitmap) {
-        val input = InputImage.fromBitmap(bitmap, 0)
-        val textTask = textRecognizer.process(input)
-        val barcodeTask = barcodeScanner.process(input)
+        val image = InputImage.fromBitmap(bitmap, 0)
 
-        Tasks.whenAllComplete(textTask, barcodeTask)
-            .addOnSuccessListener {
-                val items = mutableListOf<WordOverlayView.DetectedItem>()
+        textRecognizer.process(image)
+            .addOnSuccessListener { recognizedText ->
+                scanBarcodesAfterText(
+                    image = image,
+                    recognizedText = recognizedText,
+                    bitmap = bitmap
+                )
+            }
+            .addOnFailureListener {
+                // Barcode scanning can still succeed even when OCR fails.
+                scanBarcodesAfterText(
+                    image = image,
+                    recognizedText = null,
+                    bitmap = bitmap
+                )
+            }
+    }
 
-                if (textTask.isSuccessful) {
-                    val result = textTask.result
-                    result.textBlocks.forEach { block ->
-                        block.lines.forEach { line ->
-                            line.elements.forEach { element ->
-                                val value = element.text.trim()
-                                val bounds = element.boundingBox
-                                if (value.isNotBlank() && bounds != null &&
-                                    bounds.width() >= 4 && bounds.height() >= 4
-                                ) {
-                                    items += WordOverlayView.DetectedItem(
-                                        text = value,
-                                        bounds = bounds,
-                                        kind = WordOverlayView.Kind.WORD
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
+    private fun scanBarcodesAfterText(
+        image: InputImage,
+        recognizedText: Text?,
+        bitmap: Bitmap
+    ) {
+        barcodeScanner.process(image)
+            .addOnSuccessListener { barcodes ->
+                displayDetectedItems(
+                    recognizedText = recognizedText,
+                    barcodes = barcodes,
+                    bitmap = bitmap
+                )
+            }
+            .addOnFailureListener {
+                displayDetectedItems(
+                    recognizedText = recognizedText,
+                    barcodes = emptyList(),
+                    bitmap = bitmap
+                )
+            }
+    }
 
-                if (barcodeTask.isSuccessful) {
-                    barcodeTask.result.forEach { barcode ->
-                        val value = barcode.rawValue?.trim().orEmpty()
-                        val bounds = barcode.boundingBox
-                        if (value.isNotBlank() && bounds != null) {
-                            items += WordOverlayView.DetectedItem(
+    private fun displayDetectedItems(
+        recognizedText: Text?,
+        barcodes: List<Barcode>,
+        bitmap: Bitmap
+    ) {
+        val items = mutableListOf<WordOverlayView.DetectedItem>()
+
+        recognizedText?.textBlocks?.forEach { block ->
+            block.lines.forEach { line ->
+                line.elements.forEach { element ->
+                    val value = element.text.trim()
+                    val bounds = element.boundingBox
+                    if (
+                        value.isNotBlank() &&
+                        bounds != null &&
+                        bounds.width() >= 4 &&
+                        bounds.height() >= 4
+                    ) {
+                        items.add(
+                            WordOverlayView.DetectedItem(
                                 text = value,
                                 bounds = bounds,
-                                kind = WordOverlayView.Kind.BARCODE
+                                kind = WordOverlayView.Kind.WORD
                             )
-                        }
+                        )
                     }
                 }
-
-                val unique = items
-                    .distinctBy { "${it.kind}|${it.text}|${it.bounds.flattenToString()}" }
-                    .sortedWith(compareBy({ it.bounds.top }, { it.bounds.left }))
-
-                showResultMode()
-                binding.wordOverlay.setItems(unique, bitmap.width, bitmap.height)
-                binding.resultText.setText("")
-                binding.useButton.isEnabled = false
-
-                if (unique.isEmpty()) {
-                    binding.scannerSubtitle.text = "No readable words found — retake closer"
-                    showMessage("No text or barcode was detected.")
-                } else {
-                    val barcodes = unique.count { it.kind == WordOverlayView.Kind.BARCODE }
-                    binding.scannerSubtitle.text =
-                        "${unique.size} selectable item${if (unique.size == 1) "" else "s"}" +
-                        if (barcodes > 0) " • $barcodes barcode${if (barcodes == 1) "" else "s"}" else ""
-                }
             }
-            .addOnFailureListener { error ->
-                showLoading(false)
-                binding.captureButton.isEnabled = true
-                showMessage("Recognition failed: ${error.message}")
+        }
+
+        barcodes.forEach { barcode ->
+            val value = barcode.rawValue?.trim().orEmpty()
+            val bounds = barcode.boundingBox
+            if (value.isNotBlank() && bounds != null) {
+                items.add(
+                    WordOverlayView.DetectedItem(
+                        text = value,
+                        bounds = bounds,
+                        kind = WordOverlayView.Kind.BARCODE
+                    )
+                )
             }
+        }
+
+        val unique = items
+            .distinctBy {
+                "${it.kind}|${it.text}|${it.bounds.flattenToString()}"
+            }
+            .sortedWith(
+                compareBy<WordOverlayView.DetectedItem>(
+                    { it.bounds.top },
+                    { it.bounds.left }
+                )
+            )
+
+        showResultMode()
+        binding.wordOverlay.setItems(
+            newItems = unique,
+            width = bitmap.width,
+            height = bitmap.height
+        )
+        binding.resultText.setText("")
+        binding.useButton.isEnabled = false
+
+        if (unique.isEmpty()) {
+            binding.scannerSubtitle.text =
+                "No readable words found — retake closer"
+            showMessage("No text or barcode was detected.")
+        } else {
+            val barcodeCount =
+                unique.count { it.kind == WordOverlayView.Kind.BARCODE }
+            val itemWord = if (unique.size == 1) "item" else "items"
+            val barcodeSuffix = if (barcodeCount > 0) {
+                val barcodeWord =
+                    if (barcodeCount == 1) "barcode" else "barcodes"
+                " • $barcodeCount $barcodeWord"
+            } else {
+                ""
+            }
+            binding.scannerSubtitle.text =
+                "${unique.size} selectable $itemWord$barcodeSuffix"
+        }
     }
 
     private fun showResultMode() {
         showLoading(false)
         binding.previewView.visibility = View.INVISIBLE
+        binding.focusFrame.visibility = View.GONE
         binding.resultContainer.visibility = View.VISIBLE
         binding.cameraControls.visibility = View.GONE
         binding.resultControls.visibility = View.VISIBLE
@@ -250,10 +334,11 @@ class ScannerActivity : AppCompatActivity() {
         binding.resultText.setText("")
         binding.wordOverlay.clearItems()
         binding.capturedImage.setImageDrawable(null)
-        capturedBitmap?.takeIf { !it.isRecycled }?.recycle()
+        recycleCapturedBitmapExcept(null)
         capturedBitmap = null
 
         binding.previewView.visibility = View.VISIBLE
+        binding.focusFrame.visibility = View.VISIBLE
         binding.resultContainer.visibility = View.GONE
         binding.cameraControls.visibility = View.VISIBLE
         binding.resultControls.visibility = View.GONE
@@ -264,11 +349,16 @@ class ScannerActivity : AppCompatActivity() {
     }
 
     private fun returnSelectedValue() {
-        val value = binding.resultText.text?.toString()?.trim().orEmpty()
+        val value = binding.resultText.text
+            ?.toString()
+            ?.trim()
+            .orEmpty()
+
         if (value.isBlank()) {
             showMessage("Tap a highlighted word or code first.")
             return
         }
+
         setResult(
             Activity.RESULT_OK,
             Intent().putExtra(EXTRA_SELECTED_TEXT, value)
@@ -283,8 +373,11 @@ class ScannerActivity : AppCompatActivity() {
     }
 
     private fun showLoading(visible: Boolean, text: String? = null) {
-        binding.loadingPanel.visibility = if (visible) View.VISIBLE else View.GONE
-        if (text != null) binding.loadingText.text = text
+        binding.loadingPanel.visibility =
+            if (visible) View.VISIBLE else View.GONE
+        if (text != null) {
+            binding.loadingText.text = text
+        }
     }
 
     private fun showMessage(message: String) {
@@ -293,7 +386,10 @@ class ScannerActivity : AppCompatActivity() {
 
     private fun rotateBitmap(source: Bitmap, degrees: Int): Bitmap {
         if (degrees % 360 == 0) return source
-        val matrix = Matrix().apply { postRotate(degrees.toFloat()) }
+
+        val matrix = Matrix().apply {
+            postRotate(degrees.toFloat())
+        }
         val rotated = Bitmap.createBitmap(
             source,
             0,
@@ -303,8 +399,17 @@ class ScannerActivity : AppCompatActivity() {
             matrix,
             true
         )
-        if (rotated !== source && !source.isRecycled) source.recycle()
+        if (rotated !== source && !source.isRecycled) {
+            source.recycle()
+        }
         return rotated
+    }
+
+    private fun recycleCapturedBitmapExcept(keep: Bitmap?) {
+        val old = capturedBitmap
+        if (old != null && old !== keep && !old.isRecycled) {
+            old.recycle()
+        }
     }
 
     override fun onDestroy() {
@@ -312,7 +417,7 @@ class ScannerActivity : AppCompatActivity() {
         cameraExecutor.shutdown()
         textRecognizer.close()
         barcodeScanner.close()
-        capturedBitmap?.takeIf { !it.isRecycled }?.recycle()
+        recycleCapturedBitmapExcept(null)
     }
 
     companion object {
@@ -323,7 +428,23 @@ class ScannerActivity : AppCompatActivity() {
 private class SimpleTextWatcher(
     private val action: () -> Unit
 ) : android.text.TextWatcher {
-    override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
-    override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = action()
-    override fun afterTextChanged(s: android.text.Editable?) = Unit
+    override fun beforeTextChanged(
+        s: CharSequence?,
+        start: Int,
+        count: Int,
+        after: Int
+    ) = Unit
+
+    override fun onTextChanged(
+        s: CharSequence?,
+        start: Int,
+        before: Int,
+        count: Int
+    ) {
+        action()
+    }
+
+    override fun afterTextChanged(
+        s: android.text.Editable?
+    ) = Unit
 }
