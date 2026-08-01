@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="s2c_primary">#3157D5</color>
+    <color name="s2c_primary_dark">#203EAA</color>
+    <color name="s2c_secondary">#6A4FE8</color>
+    <color name="s2c_background">#F4F7FC</color>
+    <color name="s2c_surface">#FFFFFF</color>
+    <color name="s2c_text">#182238</color>
+    <color name="s2c_muted">#6D7A91</color>
+    <color name="s2c_success">#168657</color>
+    <color name="s2c_error">#B9384A</color>
+    <color name="s2c_outline">#D5DEEC</color>
+    <color name="s2c_black">#090D16</color>
+</resources>
