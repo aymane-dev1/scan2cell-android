@@ -56,17 +56,26 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        try {
+            startMainUi()
+        } catch (error: Throwable) {
+            showStartupFailure(error)
+        }
+    }
+
+    private fun startMainUi() {
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
         bridge = LocalBridgeClient(applicationContext)
 
         binding.codeInput.doAfterTextChanged {
-            binding.codeInputLayout.error = null
             binding.connectButton.isEnabled = !isBusy() && it?.length == 6
         }
         binding.connectButton.setOnClickListener { connectWithCode() }
         binding.advancedToggle.setOnClickListener {
-            binding.ipInputLayout.visibility = if (binding.ipInputLayout.visibility == View.VISIBLE) View.GONE else View.VISIBLE
+            binding.ipInputLayout.visibility =
+                if (binding.ipInputLayout.visibility == View.VISIBLE) View.GONE else View.VISIBLE
         }
         binding.scanButton.setOnClickListener { requestCameraAndOpenScanner() }
         binding.receiptButton.setOnClickListener { openReceiptScanner() }
@@ -80,7 +89,50 @@ class MainActivity : AppCompatActivity() {
 
         updateUiFromSavedPairing()
         renderPendingReceipt()
-        verifySavedConnection()
+
+        // Connection verification is non-essential for launching the app.
+        // Delay it until the first frame is already visible.
+        binding.root.postDelayed({ verifySavedConnection() }, 350L)
+    }
+
+    private fun showStartupFailure(error: Throwable) {
+        val scroll = android.widget.ScrollView(this)
+        val box = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            setPadding(32, 36, 32, 36)
+        }
+        val title = android.widget.TextView(this).apply {
+            text = "Scan2Cell startup error"
+            textSize = 22f
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+        }
+        val message = android.widget.TextView(this).apply {
+            text = buildString {
+                append("\nThe app caught the crash instead of closing.\n\n")
+                append(error.javaClass.simpleName)
+                append(": ")
+                append(error.message ?: "No message")
+                append("\n\n")
+                append(error.stackTrace.take(8).joinToString("\n"))
+            }
+            textSize = 13f
+            setTextIsSelectable(true)
+        }
+        val reset = android.widget.Button(this).apply {
+            text = "Clear saved connection and restart"
+            setOnClickListener {
+                getSharedPreferences("scan2cell.local", MODE_PRIVATE)
+                    .edit()
+                    .clear()
+                    .apply()
+                recreate()
+            }
+        }
+        box.addView(title)
+        box.addView(message)
+        box.addView(reset)
+        scroll.addView(box)
+        setContentView(scroll)
     }
 
     private fun requestCameraAndOpenScanner() {
@@ -97,7 +149,7 @@ class MainActivity : AppCompatActivity() {
     private fun connectWithCode() {
         val code = binding.codeInput.text?.toString()?.trim().orEmpty()
         if (!code.matches(Regex("\\d{6}"))) {
-            binding.codeInputLayout.error = "Enter the complete six-digit code."
+            showMessage("Enter the complete six-digit code.")
             return
         }
         hideKeyboard()
