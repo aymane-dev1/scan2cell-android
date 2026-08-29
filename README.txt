@@ -1,14 +1,12 @@
-SCAN2CELL v1.2.1 — RECEIPT OCR FIX
+SCAN2CELL v1.2.2 — CORRECT TREASURY MAPPING
 
-Fixes:
-1. Amount no longer has to be on the exact same OCR line as "Montant reçu".
-   Scan2Cell scores all money-looking values and strongly prefers the value
-   next to / immediately after the Montant label.
-2. Common OCR mistakes such as 487,0O and 487.OO are normalized.
-3. Name parsing is more tolerant of ML Kit splitting "Nom client" and the name.
-4. The two long PID/reference codes are detected more strictly around PID/Réf.
-5. Do NOT trust left/right as Trésorerie/Contrat by itself. PC/Excel v1.2.1
-   tests BOTH orientations against BASE_FULL + BASE_SIMPLE and keeps the
-   orientation that actually matches your database.
+Correct mapping for the receipt shown by the user:
+- TOP boxed code "N° 0147UDAS" = N° Trésorerie.
+- "Nom client" = Nom & Prénom.
+- "Montant reçu" = Montant.
+- Bottom PID / Réf. numbers are NOT treated as treasury.
+- N° Contrat is resolved by Excel from BASE_FULL / BASE_SIMPLE using the
+  scanned N° Trésorerie. The phone no longer guesses a contract from the
+  ambiguous bottom references.
 
-Install over the existing APK; do not uninstall.
+Install over the existing app. Do not uninstall.

@@ -5,13 +5,12 @@ import java.text.Normalizer
 /**
  * Receipt parser tuned for the Al Amana receipt layout.
  *
- * Important:
- * - The paper does not explicitly label the two long PID/reference values as
- *   "Treasury" and "Contract". We therefore return the two strongest reference
- *   candidates left-to-right. Excel v1.2.1 tests BOTH orientations against
- *   BASE_FULL + BASE_SIMPLE and keeps the matching orientation automatically.
- * - Amount detection is deliberately global as a fallback because ML Kit can
- *   split "Montant reçu" and "487,00" into different OCR lines.
+ * Correct mapping:
+ * - N° Trésorerie = TOP boxed alphanumeric code, e.g. 0147UDAS.
+ * - Nom & Prénom = value after "Nom client".
+ * - Montant = value beside/near "Montant reçu".
+ * - N° Contrat is NOT guessed from the bottom PID/reference pair.
+ *   Excel resolves the contract from BASE_FULL / BASE_SIMPLE using treasury.
  */
 object ReceiptParser {
     fun parse(lines: List<String>): ReceiptData {
@@ -19,14 +18,17 @@ object ReceiptParser {
             .map { it.replace(Regex("\\s+"), " ").trim() }
             .filter { it.isNotBlank() }
 
+        val treasury = findTreasuryNumber(cleaned)
         val name = findClientName(cleaned)
         val amount = findAmount(cleaned)
-        val ids = findReferencePair(cleaned)
 
         return ReceiptData(
-            treasuryNumber = ids.first,
+            treasuryNumber = treasury,
             clientName = name,
-            contractNumber = ids.second,
+            // The receipt does not explicitly label a contract number.
+            // Excel resolves the real contract from BASE_FULL / BASE_SIMPLE
+            // using the correctly scanned N° Trésorerie.
+            contractNumber = "",
             amount = amount
         )
     }
@@ -36,6 +38,68 @@ object ReceiptParser {
             .replace(Regex("\\p{Mn}+"), "")
             .lowercase()
             .replace('’', '\'')
+    }
+
+
+    private fun findTreasuryNumber(lines: List<String>): String {
+        data class Candidate(val value: String, val score: Int, val index: Int)
+
+        val candidates = mutableListOf<Candidate>()
+
+        // Real examples from the receipt:
+        // 0146VIPA, 0149L1ZG, 014COKUS, 0147UDAS
+        // Require BOTH letters and digits so dates / times / phone numbers cannot win.
+        val tokenRegex = Regex("(?<![A-Z0-9])([A-Z0-9]{6,12})(?![A-Z0-9])", RegexOption.IGNORE_CASE)
+
+        lines.forEachIndexed { index, line ->
+            val folded = fold(line)
+            tokenRegex.findAll(line.uppercase()).forEach { match ->
+                val raw = match.groupValues[1]
+                    .replace(" ", "")
+                    .trim()
+
+                if (!raw.any { it.isDigit() } || !raw.any { it.isLetter() }) {
+                    return@forEach
+                }
+
+                // Exclude ordinary words that happen to be long.
+                if (raw.all { it.isLetter() }) return@forEach
+
+                var score = 10
+
+                // The treasury code is printed in the top boxed "N° ..." area.
+                if (folded.contains("n°") ||
+                    folded.contains("nº") ||
+                    folded.contains("n0") ||
+                    folded.matches(Regex(".*\\bn\\s*[°ºo0]?\\s*.*"))
+                ) score += 40
+
+                val previous = lines.getOrNull(index - 1)?.let(::fold).orEmpty()
+                val next = lines.getOrNull(index + 1)?.let(::fold).orEmpty()
+
+                if (folded.contains("recu") || previous.contains("recu") || next.contains("recu")) {
+                    score += 25
+                }
+
+                // It appears near the top of OCR reading order.
+                if (index <= 5) score += 15
+                if (index <= 10) score += 5
+
+                // Do not confuse bottom PID/reference material with treasury.
+                if (folded.contains("pid") || folded.contains("ref")) score -= 40
+
+                candidates += Candidate(raw, score, index)
+            }
+        }
+
+        return candidates
+            .sortedWith(
+                compareByDescending<Candidate> { it.score }
+                    .thenBy { it.index }
+            )
+            .firstOrNull()
+            ?.value
+            .orEmpty()
     }
 
     private fun findClientName(lines: List<String>): String {

@@ -147,20 +147,29 @@ class ReceiptScannerActivity : AppCompatActivity() {
         binding.reviewPanel.visibility = View.VISIBLE
         binding.flashButton.visibility = View.GONE
         binding.titleText.text = "Check the 4 fields"
-        binding.subtitleText.text = "Correct anything before sending to Excel"
+        binding.subtitleText.text = "Treasury = top boxed N°. Contract is resolved from Excel."
 
         binding.treasuryInput.setText(data.treasuryNumber)
         binding.nameInput.setText(data.clientName)
-        binding.contractInput.setText(data.contractNumber)
+        binding.contractInput.setText("")
+        binding.contractInput.hint = "Auto from BASE_FULL / BASE_SIMPLE"
+        binding.contractInput.isEnabled = false
+        binding.swapIdsButton.visibility = View.GONE
         binding.amountInput.setText(data.amount)
-        updateDetectedStatus(data.detectedCount)
+        updateDetectedStatus(data)
     }
 
-    private fun updateDetectedStatus(count: Int) {
-        binding.detectedStatus.text = when (count) {
-            4 -> "4 / 4 fields detected"
-            3 -> "3 / 4 detected • check the missing field"
-            else -> "$count / 4 detected • please review carefully"
+    private fun updateDetectedStatus(data: ReceiptData) {
+        val scannedCount = listOf(
+            data.treasuryNumber,
+            data.clientName,
+            data.amount
+        ).count { it.isNotBlank() }
+
+        binding.detectedStatus.text = when (scannedCount) {
+            3 -> "3 scanned fields ready • Contract will come from Excel"
+            2 -> "2 / 3 scanned • review the missing field • Contract from Excel"
+            else -> "$scannedCount / 3 scanned • review carefully • Contract from Excel"
         }
     }
 

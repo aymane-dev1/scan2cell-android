@@ -11,8 +11,8 @@ android {
         applicationId = "com.scan2cell.app"
         minSdk = 24
         targetSdk = 35
-        versionCode = 121
-        versionName = "1.2.1-local"
+        versionCode = 122
+        versionName = "1.2.2-local"
     }
 
     signingConfigs {
