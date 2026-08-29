@@ -1,17 +1,21 @@
-SCAN2CELL v1.1.1 — LAUNCH CRASH FIX
+SCAN2CELL v1.1.2 — STABLE STARTUP ROLLBACK
 
-This update targets the crash that happens immediately after tapping the app
-icon, before the camera or receipt scanner starts.
+Why:
+v1.1.1 proved that saved pairing was NOT causing the launch crash.
+This version restores the exact v1.0.1 main-screen structure that was already
+working on the same phone, then adds only one Receipt Mode button.
 
-Changes:
-- Replaced the main screen's Material Card/TextInput inflation with stable
-  standard Android widgets.
-- Kept the clean Scan2Cell design using lightweight drawable backgrounds.
-- Delayed the non-essential PC connection check until after the first UI frame.
-- Added a startup crash fallback: if startup throws again, Scan2Cell stays open
-  and prints the exact exception on screen instead of disappearing.
-- Same package name and same signing key. Install over v1.1.0; do not uninstall.
+What remains:
+- Existing local pairing / bridge behavior
+- Single smart scan
+- Receipt OCR / review screen
+- Automatic 4-field receipt send to Excel
 
-GitHub:
-Upload all files from the PATCH ZIP, replace existing files, commit, wait for
-Actions to turn green, then download Scan2Cell-v1.1.1.apk.
+What changed:
+- Removed the experimental v1.1.x main-screen redesign
+- Restored the proven v1.0.1 startup layout
+- Added only “Scan receipt • 4 fields”
+- Network verification starts after the UI is already visible
+- Compact startup error remains only as a fallback
+
+Install over the existing app. Do NOT uninstall it.

@@ -1,401 +1,290 @@
 <?xml version="1.0" encoding="utf-8"?>
-<androidx.core.widget.NestedScrollView
-    xmlns:android="http://schemas.android.com/apk/res/android"
+<androidx.core.widget.NestedScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:fillViewport="true"
-    android:background="@color/s2c_background">
+    android:background="@color/s2c_background"
+    android:fillViewport="true">
 
     <LinearLayout
-        android:id="@+id/root"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="vertical"
-        android:padding="18dp">
+        android:orientation="vertical">
 
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:gravity="center_vertical"
-            android:orientation="horizontal"
-            android:paddingBottom="14dp">
+            android:background="@drawable/bg_header"
+            android:orientation="vertical"
+            android:paddingStart="22dp"
+            android:paddingTop="24dp"
+            android:paddingEnd="22dp"
+            android:paddingBottom="26dp">
 
-            <LinearLayout
-                android:layout_width="0dp"
+            <TextView
+                android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:orientation="vertical">
+                android:text="SCAN2CELL LOCAL"
+                android:textColor="#C9D7FF"
+                android:textSize="11sp"
+                android:textStyle="bold" />
 
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Scan2Cell"
-                    android:textColor="@color/s2c_text"
-                    android:textSize="28sp"
-                    android:textStyle="bold" />
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="2dp"
-                    android:text="Local • fast • private"
-                    android:textColor="@color/s2c_muted"
-                    android:textSize="12sp" />
-            </LinearLayout>
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text="Scan it. Tap it. Send it."
+                android:textColor="@android:color/white"
+                android:textSize="26sp"
+                android:textStyle="bold" />
 
             <TextView
                 android:id="@+id/connectionStatus"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
+                android:layout_marginTop="14dp"
                 android:background="@drawable/bg_status_offline"
-                android:paddingStart="11dp"
-                android:paddingTop="7dp"
-                android:paddingEnd="11dp"
-                android:paddingBottom="7dp"
                 android:text="Not connected"
                 android:textColor="@color/s2c_error"
-                android:textSize="11sp"
+                android:textSize="12sp"
                 android:textStyle="bold" />
         </LinearLayout>
 
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:background="@drawable/bg_main_card"
             android:orientation="vertical"
-            android:padding="17dp">
+            android:paddingStart="18dp"
+            android:paddingTop="18dp"
+            android:paddingEnd="18dp"
+            android:paddingBottom="26dp">
 
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="CONNECT TO EXCEL"
-                android:textColor="@color/s2c_primary"
-                android:textSize="11sp"
-                android:textStyle="bold" />
-
-            <TextView
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/pairCard"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="5dp"
-                android:text="Enter the six-digit code shown in Scan2Cell Local on your PC."
-                android:textColor="@color/s2c_muted"
-                android:textSize="13sp" />
+                app:cardCornerRadius="20dp"
+                app:cardElevation="0dp"
+                app:strokeColor="@color/s2c_outline"
+                app:strokeWidth="1dp">
 
-            <LinearLayout
-                android:id="@+id/codeInputLayout"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="13dp"
-                android:background="@drawable/bg_input"
-                android:orientation="vertical">
-
-                <EditText
-                    android:id="@+id/codeInput"
+                <LinearLayout
                     android:layout_width="match_parent"
-                    android:layout_height="58dp"
-                    android:background="@android:color/transparent"
-                    android:digits="0123456789"
-                    android:gravity="center"
-                    android:hint="000000"
-                    android:inputType="number"
-                    android:letterSpacing="0.16"
-                    android:maxLength="6"
-                    android:paddingStart="12dp"
-                    android:paddingEnd="12dp"
-                    android:singleLine="true"
-                    android:textColor="@color/s2c_text"
-                    android:textColorHint="#A4AEC0"
-                    android:textSize="24sp"
-                    android:textStyle="bold" />
-            </LinearLayout>
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="18dp">
 
-            <Button
-                android:id="@+id/connectButton"
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="CONNECT TO EXCEL"
+                        android:textColor="@color/s2c_primary"
+                        android:textSize="11sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="5dp"
+                        android:text="Enter the six-digit code shown in the Excel pane."
+                        android:textColor="@color/s2c_muted"
+                        android:textSize="13sp" />
+
+                    <com.google.android.material.textfield.TextInputLayout
+                        android:id="@+id/codeInputLayout"
+                        style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="15dp"
+                        android:hint="6-digit code"
+                        app:boxCornerRadiusBottomEnd="14dp"
+                        app:boxCornerRadiusBottomStart="14dp"
+                        app:boxCornerRadiusTopEnd="14dp"
+                        app:boxCornerRadiusTopStart="14dp">
+
+                        <com.google.android.material.textfield.TextInputEditText
+                            android:id="@+id/codeInput"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:digits="0123456789"
+                            android:gravity="center"
+                            android:inputType="number"
+                            android:letterSpacing="0.18"
+                            android:maxLength="6"
+                            android:singleLine="true"
+                            android:textSize="25sp"
+                            android:textStyle="bold" />
+                    </com.google.android.material.textfield.TextInputLayout>
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/connectButton"
+                        android:layout_width="match_parent"
+                        android:layout_height="52dp"
+                        android:layout_marginTop="12dp"
+                        android:text="Find PC and connect"
+                        android:textAllCaps="false"
+                        android:textStyle="bold"
+                        app:cornerRadius="14dp" />
+
+                    <TextView
+                        android:id="@+id/advancedToggle"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_gravity="center_horizontal"
+                        android:layout_marginTop="10dp"
+                        android:padding="6dp"
+                        android:text="PC not found? Enter its IP address"
+                        android:textColor="@color/s2c_primary"
+                        android:textSize="12sp" />
+
+                    <com.google.android.material.textfield.TextInputLayout
+                        android:id="@+id/ipInputLayout"
+                        style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="6dp"
+                        android:hint="PC IP, for example 192.168.1.10"
+                        android:visibility="gone">
+
+                        <com.google.android.material.textfield.TextInputEditText
+                            android:id="@+id/ipInput"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:inputType="textUri"
+                            android:singleLine="true" />
+                    </com.google.android.material.textfield.TextInputLayout>
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <com.google.android.material.card.MaterialCardView
                 android:layout_width="match_parent"
-                android:layout_height="52dp"
-                android:layout_marginTop="10dp"
-                android:background="@drawable/bg_primary_button"
-                android:enabled="false"
-                android:text="Find PC and connect"
-                android:textAllCaps="false"
-                android:textColor="@android:color/white"
-                android:textStyle="bold" />
+                android:layout_height="wrap_content"
+                android:layout_marginTop="14dp"
+                app:cardCornerRadius="20dp"
+                app:cardElevation="0dp"
+                app:strokeColor="@color/s2c_outline"
+                app:strokeWidth="1dp">
 
-            <TextView
-                android:id="@+id/advancedToggle"
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="18dp">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="READY TO SCAN"
+                        android:textColor="@color/s2c_primary"
+                        android:textSize="11sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/scanHint"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="5dp"
+                        android:text="Connect to Excel, then photograph a document and tap the exact highlighted word or code you need."
+                        android:textColor="@color/s2c_muted"
+                        android:textSize="13sp" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/scanButton"
+                        android:layout_width="match_parent"
+                        android:layout_height="58dp"
+                        android:layout_marginTop="16dp"
+                        android:enabled="false"
+                        android:text="Open smart scanner"
+                        android:textAllCaps="false"
+                        android:textSize="16sp"
+                        android:textStyle="bold"
+                        app:cornerRadius="16dp"
+                        app:icon="@drawable/ic_scan"
+                        app:iconGravity="textStart"
+                        app:iconPadding="10dp" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/receiptButton"
+                        style="@style/Widget.Material3.Button.OutlinedButton"
+                        android:layout_width="match_parent"
+                        android:layout_height="56dp"
+                        android:layout_marginTop="10dp"
+                        android:enabled="false"
+                        android:text="Scan receipt • 4 fields"
+                        android:textAllCaps="false"
+                        android:textSize="15sp"
+                        android:textStyle="bold"
+                        app:cornerRadius="16dp" />
+
+                    <TextView
+                        android:id="@+id/selectedLabel"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="18dp"
+                        android:text="Selected value"
+                        android:textColor="@color/s2c_text"
+                        android:textSize="12sp"
+                        android:textStyle="bold" />
+
+                    <com.google.android.material.textfield.TextInputLayout
+                        style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="7dp"
+                        app:boxCornerRadiusBottomEnd="14dp"
+                        app:boxCornerRadiusBottomStart="14dp"
+                        app:boxCornerRadiusTopEnd="14dp"
+                        app:boxCornerRadiusTopStart="14dp">
+
+                        <com.google.android.material.textfield.TextInputEditText
+                            android:id="@+id/selectedText"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:hint="Tap a highlighted word in the scanner"
+                            android:inputType="textMultiLine"
+                            android:maxLines="4"
+                            android:minLines="2" />
+                    </com.google.android.material.textfield.TextInputLayout>
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/sendButton"
+                        style="@style/Widget.Material3.Button.OutlinedButton"
+                        android:layout_width="match_parent"
+                        android:layout_height="52dp"
+                        android:layout_marginTop="11dp"
+                        android:enabled="false"
+                        android:text="Send to selected Excel cell"
+                        android:textAllCaps="false"
+                        android:textStyle="bold"
+                        app:cornerRadius="14dp" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <ProgressBar
+                android:id="@+id/progress"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_gravity="center_horizontal"
-                android:layout_marginTop="7dp"
-                android:padding="7dp"
-                android:text="PC not found? Enter its IP address"
-                android:textColor="@color/s2c_primary"
-                android:textSize="12sp" />
-
-            <LinearLayout
-                android:id="@+id/ipInputLayout"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="5dp"
-                android:background="@drawable/bg_input"
-                android:orientation="vertical"
-                android:visibility="gone">
-
-                <EditText
-                    android:id="@+id/ipInput"
-                    android:layout_width="match_parent"
-                    android:layout_height="52dp"
-                    android:background="@android:color/transparent"
-                    android:hint="PC IP, e.g. 192.168.1.10"
-                    android:inputType="textUri"
-                    android:paddingStart="13dp"
-                    android:paddingEnd="13dp"
-                    android:singleLine="true"
-                    android:textColor="@color/s2c_text"
-                    android:textColorHint="#A4AEC0" />
-            </LinearLayout>
-        </LinearLayout>
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="20dp"
-            android:text="CHOOSE A MODE"
-            android:textColor="@color/s2c_primary"
-            android:textSize="11sp"
-            android:textStyle="bold" />
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="9dp"
-            android:orientation="horizontal">
-
-            <LinearLayout
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:background="@drawable/bg_main_card"
-                android:orientation="vertical"
-                android:padding="14dp">
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Single value"
-                    android:textColor="@color/s2c_text"
-                    android:textSize="16sp"
-                    android:textStyle="bold" />
-
-                <TextView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="4dp"
-                    android:text="Tap one exact word or code."
-                    android:textColor="@color/s2c_muted"
-                    android:textSize="12sp" />
-
-                <Button
-                    android:id="@+id/scanButton"
-                    android:layout_width="match_parent"
-                    android:layout_height="48dp"
-                    android:layout_marginTop="11dp"
-                    android:background="@drawable/bg_secondary_button"
-                    android:enabled="false"
-                    android:text="Scan"
-                    android:textAllCaps="false"
-                    android:textColor="@color/s2c_primary"
-                    android:textStyle="bold" />
-            </LinearLayout>
-
-            <Space
-                android:layout_width="10dp"
-                android:layout_height="1dp" />
-
-            <LinearLayout
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:background="@drawable/bg_receipt_mode_card"
-                android:orientation="vertical"
-                android:padding="14dp">
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Receipt"
-                    android:textColor="@color/s2c_primary"
-                    android:textSize="16sp"
-                    android:textStyle="bold" />
-
-                <TextView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="4dp"
-                    android:text="One photo → 4 Excel fields."
-                    android:textColor="@color/s2c_muted"
-                    android:textSize="12sp" />
-
-                <Button
-                    android:id="@+id/receiptButton"
-                    android:layout_width="match_parent"
-                    android:layout_height="48dp"
-                    android:layout_marginTop="11dp"
-                    android:background="@drawable/bg_primary_button"
-                    android:enabled="false"
-                    android:text="Scan receipt"
-                    android:textAllCaps="false"
-                    android:textColor="@android:color/white"
-                    android:textStyle="bold" />
-            </LinearLayout>
-        </LinearLayout>
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="14dp"
-            android:background="@drawable/bg_main_card"
-            android:orientation="vertical"
-            android:padding="15dp">
+                android:layout_marginTop="16dp"
+                android:visibility="gone" />
 
             <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="Single scan result"
-                android:textColor="@color/s2c_text"
-                android:textSize="13sp"
-                android:textStyle="bold" />
-
-            <EditText
-                android:id="@+id/selectedText"
+                android:id="@+id/messageText"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="7dp"
-                android:background="@drawable/bg_input"
-                android:hint="Selected value"
-                android:inputType="textMultiLine"
-                android:maxLines="3"
-                android:minHeight="52dp"
-                android:minLines="1"
-                android:padding="12dp"
-                android:textColor="@color/s2c_text"
-                android:textColorHint="#A4AEC0" />
-
-            <Button
-                android:id="@+id/sendButton"
-                android:layout_width="match_parent"
-                android:layout_height="48dp"
-                android:layout_marginTop="9dp"
-                android:background="@drawable/bg_secondary_button"
-                android:enabled="false"
-                android:text="Send to selected Excel cell"
-                android:textAllCaps="false"
-                android:textColor="@color/s2c_primary"
-                android:textStyle="bold" />
-        </LinearLayout>
-
-        <LinearLayout
-            android:id="@+id/receiptPreviewCard"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="14dp"
-            android:background="@drawable/bg_receipt_mode_card"
-            android:orientation="vertical"
-            android:padding="16dp"
-            android:visibility="gone">
+                android:layout_marginTop="10dp"
+                android:gravity="center"
+                android:textColor="@color/s2c_muted"
+                android:textSize="13sp" />
 
             <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="Receipt ready"
-                android:textColor="@color/s2c_primary"
-                android:textSize="15sp"
-                android:textStyle="bold" />
-
-            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-                android:layout_marginTop="9dp" android:text="N° Trésorerie"
-                android:textColor="@color/s2c_muted" android:textSize="10sp" />
-            <TextView android:id="@+id/receiptTreasuryText" android:layout_width="match_parent"
-                android:layout_height="wrap_content" android:textColor="@color/s2c_text"
-                android:textStyle="bold" />
-
-            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-                android:layout_marginTop="7dp" android:text="Nom &amp; Prénom"
-                android:textColor="@color/s2c_muted" android:textSize="10sp" />
-            <TextView android:id="@+id/receiptNameText" android:layout_width="match_parent"
-                android:layout_height="wrap_content" android:textColor="@color/s2c_text"
-                android:textStyle="bold" />
-
-            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-                android:layout_marginTop="7dp" android:text="N° Contrat"
-                android:textColor="@color/s2c_muted" android:textSize="10sp" />
-            <TextView android:id="@+id/receiptContractText" android:layout_width="match_parent"
-                android:layout_height="wrap_content" android:textColor="@color/s2c_text"
-                android:textStyle="bold" />
-
-            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-                android:layout_marginTop="7dp" android:text="Montant"
-                android:textColor="@color/s2c_muted" android:textSize="10sp" />
-            <TextView android:id="@+id/receiptAmountText" android:layout_width="match_parent"
-                android:layout_height="wrap_content" android:textColor="@color/s2c_text"
-                android:textStyle="bold" />
-
-            <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="11dp"
-                android:orientation="horizontal">
-
-                <Button
-                    android:id="@+id/receiptClearButton"
-                    android:layout_width="0dp"
-                    android:layout_height="48dp"
-                    android:layout_weight="1"
-                    android:background="@drawable/bg_secondary_button"
-                    android:text="Clear"
-                    android:textAllCaps="false"
-                    android:textColor="@color/s2c_primary" />
-
-                <Space android:layout_width="9dp" android:layout_height="1dp" />
-
-                <Button
-                    android:id="@+id/receiptSendButton"
-                    android:layout_width="0dp"
-                    android:layout_height="48dp"
-                    android:layout_weight="1.6"
-                    android:background="@drawable/bg_primary_button"
-                    android:text="Send receipt again"
-                    android:textAllCaps="false"
-                    android:textColor="@android:color/white"
-                    android:textStyle="bold" />
-            </LinearLayout>
+                android:layout_marginTop="18dp"
+                android:gravity="center"
+                android:text="Local network only • No public relay • No image cache"
+                android:textColor="#8A96A8"
+                android:textSize="11sp" />
         </LinearLayout>
-
-        <ProgressBar
-            android:id="@+id/progress"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_gravity="center_horizontal"
-            android:layout_marginTop="15dp"
-            android:visibility="gone" />
-
-        <TextView
-            android:id="@+id/messageText"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="9dp"
-            android:gravity="center"
-            android:text="Local network only • no public relay"
-            android:textColor="@color/s2c_muted"
-            android:textSize="12sp" />
-
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="13dp"
-            android:gravity="center"
-            android:text="Receipt photos are processed in memory."
-            android:textColor="#8A96A8"
-            android:textSize="10sp" />
     </LinearLayout>
 </androidx.core.widget.NestedScrollView>
