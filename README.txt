@@ -1,21 +1,14 @@
-SCAN2CELL v1.1.2 — STABLE STARTUP ROLLBACK
+SCAN2CELL v1.2.1 — RECEIPT OCR FIX
 
-Why:
-v1.1.1 proved that saved pairing was NOT causing the launch crash.
-This version restores the exact v1.0.1 main-screen structure that was already
-working on the same phone, then adds only one Receipt Mode button.
+Fixes:
+1. Amount no longer has to be on the exact same OCR line as "Montant reçu".
+   Scan2Cell scores all money-looking values and strongly prefers the value
+   next to / immediately after the Montant label.
+2. Common OCR mistakes such as 487,0O and 487.OO are normalized.
+3. Name parsing is more tolerant of ML Kit splitting "Nom client" and the name.
+4. The two long PID/reference codes are detected more strictly around PID/Réf.
+5. Do NOT trust left/right as Trésorerie/Contrat by itself. PC/Excel v1.2.1
+   tests BOTH orientations against BASE_FULL + BASE_SIMPLE and keeps the
+   orientation that actually matches your database.
 
-What remains:
-- Existing local pairing / bridge behavior
-- Single smart scan
-- Receipt OCR / review screen
-- Automatic 4-field receipt send to Excel
-
-What changed:
-- Removed the experimental v1.1.x main-screen redesign
-- Restored the proven v1.0.1 startup layout
-- Added only “Scan receipt • 4 fields”
-- Network verification starts after the UI is already visible
-- Compact startup error remains only as a fallback
-
-Install over the existing app. Do NOT uninstall it.
+Install over the existing APK; do not uninstall.
