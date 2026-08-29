@@ -1,22 +1,16 @@
-# Scan2Cell Local Final
+# Scan2Cell v1.1.0 — Receipt Mode
 
-This Android project pairs with the local Scan2Cell PC bridge over the same
-Wi-Fi. It does not use ntfy or another public relay.
+## New receipt workflow
+Take **one photo of the full receipt**. The app looks for:
 
-## Build on GitHub
-Upload this complete project's contents to the root of the
-`scan2cell-android` repository. The included GitHub Actions workflow builds:
+1. N° Trésorerie — first long numeric reference on the PID/reference line
+2. Nom & Prénom — value after `Nom client`
+3. N° Contrat — second long numeric reference on the PID/reference line
+4. Montant — value after `Montant reçu`
 
-`Scan2Cell-Final-v1.0.apk`
+The four fields are always shown on a review screen before sending. Missing fields stay blank; the app does not invent values. There is also a **Swap IDs** button in case the two long references need the opposite business meaning.
 
-Download it from the green run under **Artifacts → Scan2Cell-Final-APK**.
+Receipt mode sends to the Excel **Reçus** register automatically. Single-value mode still sends to the selected cell.
 
-## First installation
-Uninstall the older relay-based Scan2Cell APK once, then install this APK.
-This project includes a stable personal test signing key, so future APK builds
-from this project can update the installed app directly.
-
-## Scanner behavior
-The camera capture is held in memory. ML Kit returns individual word-level
-bounding boxes plus barcode/QR bounding boxes. Tap the exact box, edit the
-selected value if needed, and send it to Excel.
+## Build
+Upload the full project to GitHub. Actions builds `Scan2Cell-v1.1.0.apk` using the same included signing key as v1.0.x, so it can update the installed local version directly.

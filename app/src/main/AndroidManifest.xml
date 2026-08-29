@@ -21,6 +21,12 @@
         android:usesCleartextTraffic="true">
 
         <activity
+            android:name=".ReceiptScannerActivity"
+            android:exported="false"
+            android:screenOrientation="portrait"
+            android:theme="@style/Theme.Scan2Cell.Scanner" />
+
+        <activity
             android:name=".ScannerActivity"
             android:exported="false"
             android:screenOrientation="portrait"

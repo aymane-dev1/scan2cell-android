@@ -151,6 +151,41 @@ class LocalBridgeClient(private val context: Context) {
         }
     }
 
+
+    fun sendReceipt(
+        baseUrl: String,
+        token: String,
+        deviceId: String,
+        receipt: ReceiptData
+    ): SendResult {
+        val payload = JSONObject()
+            .put("treasuryNumber", receipt.treasuryNumber)
+            .put("clientName", receipt.clientName)
+            .put("contractNumber", receipt.contractNumber)
+            .put("amount", receipt.amount)
+            .put("requestId", UUID.randomUUID().toString())
+            .toString()
+
+        val request = Request.Builder()
+            .url("${baseUrl.trimEnd('/')}/api/receipt")
+            .post(payload.toRequestBody(jsonType))
+            .header("Authorization", "Bearer $token")
+            .header("X-Device-Id", deviceId)
+            .header("Cache-Control", "no-cache")
+            .build()
+
+        client.newCall(request).execute().use { response ->
+            val body = response.body?.string().orEmpty()
+            val json = runCatching { JSONObject(body) }.getOrElse { JSONObject() }
+            if (!response.isSuccessful || !json.optBoolean("ok")) {
+                throw IllegalStateException(
+                    json.optString("error", "Receipt send failed with HTTP ${response.code}.")
+                )
+            }
+            return SendResult(address = json.optString("address", "Reçus sheet"))
+        }
+    }
+
     private fun discoverWithUdp(): ServerEndpoint {
         val message = "SCAN2CELL_DISCOVER_V1".toByteArray(StandardCharsets.UTF_8)
         DatagramSocket().use { socket ->
