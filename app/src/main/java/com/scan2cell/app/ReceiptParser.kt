@@ -277,94 +277,157 @@ object ReceiptParser {
 
     private fun findReferencePair(lines: List<String>): Pair<String, String> {
         data class Candidate(
-            val left: String,
-            val right: String,
-            val score: Int,
-            val lineIndex: Int
+            val value: String,
+            val lineIndex: Int,
+            val tokenOrder: Int,
+            val score: Int
         )
+
+        // These two identifiers are normally 11 digits and start with zeros.
+        // We keep a slightly wider range so the parser is not tied to one exact
+        // database length, but we strongly prefer 11-digit values.
+        fun isLikelyReference(value: String): Boolean {
+            if (value.length !in 9..14) return false
+            if (!value.startsWith("0")) return false
+            if (looksLikePhoneNumber(value)) return false
+            return true
+        }
+
+        fun extractIdentifiers(line: String): List<String> {
+            val result = mutableListOf<String>()
+            val digitLikeChars = "0-9OoQqIiLlZzSsGgBbTt"
+
+            // First catch the most common left/right layout when ML Kit returns
+            // both IDs on one OCR line, with either a slash or just whitespace.
+            val obviousPair = Regex(
+                "([$digitLikeChars]{9,14})\\s*(?:[/|\\\\]|\\s{1,})\\s*([$digitLikeChars]{9,14})",
+                RegexOption.IGNORE_CASE
+            )
+            obviousPair.findAll(line).forEach { match ->
+                val left = normalizeIdentifier(match.groupValues[1])
+                val right = normalizeIdentifier(match.groupValues[2])
+                if (isLikelyReference(left)) result += left
+                if (isLikelyReference(right)) result += right
+            }
+
+            // 1) Normal OCR output: one long token.
+            // 2) Broken OCR output: digits split by spaces/dots/dashes, for example
+            //    "00000 234329" or "0000 666 5874".
+            // Common letter/digit confusions are accepted and normalized later.
+            val numericLike = Regex(
+                "(?<![A-Z0-9])([0-9OoQqIiLlZzSsGgBbTt](?:[0-9OoQqIiLlZzSsGgBbTt._-]*[0-9OoQqIiLlZzSsGgBbTt])?)(?![A-Z0-9])",
+                RegexOption.IGNORE_CASE
+            )
+
+            // Split on large visual gaps first. A single space may be inside an ID,
+            // while two+ spaces usually separate the left and right receipt columns.
+            line.split(Regex("\\s{2,}|[/|\\\\:;]+"))
+                .forEach { chunk ->
+                    // First try the whole chunk with internal spaces removed.
+                    val whole = normalizeIdentifier(chunk)
+                    if (isLikelyReference(whole)) result += whole
+
+                    // Then inspect smaller numeric-like runs in the chunk.
+                    numericLike.findAll(chunk.replace(" ", ""))
+                        .map { normalizeIdentifier(it.groupValues[1]) }
+                        .filter(::isLikelyReference)
+                        .forEach { result += it }
+                }
+
+            // Extra pass for OCR that inserts single spaces inside an identifier.
+            // We only accept the collapsed value if it remains a plausible ID.
+            val collapsedRuns = Regex(
+                "(?<![A-Z0-9])([0-9OoQqIiLlZzSsGgBbTt]{2,6}(?:\\s+[0-9OoQqIiLlZzSsGgBbTt]{2,7}){1,4})(?![A-Z0-9])",
+                RegexOption.IGNORE_CASE
+            )
+            collapsedRuns.findAll(line).forEach { match ->
+                val value = normalizeIdentifier(match.groupValues[1])
+                if (isLikelyReference(value)) result += value
+            }
+
+            return result.distinct()
+        }
 
         val candidates = mutableListOf<Candidate>()
 
-        // Allow OCR confusions in long numeric references.
-        val pairRegex = Regex(
-            "([0-9OoIlLSsBb\\s]{7,24})\\s*[/|\\\\]\\s*([0-9OoIlLSsBb\\s]{7,24})"
-        )
-
-        lines.forEachIndexed { index, line ->
-            pairRegex.findAll(line).forEach { match ->
-                val left = normalizeIdentifier(match.groupValues[1])
-                val right = normalizeIdentifier(match.groupValues[2])
-
-                if (left.length in 7..16 && right.length in 7..16) {
-                    val from = (index - 3).coerceAtLeast(0)
-                    val to = (index + 3).coerceAtMost(lines.size)
-                    val neighborhood = lines.subList(from, to)
-                        .joinToString(" ") { fold(it) }
-
-                    var score = 5
-                    if (neighborhood.contains("pid")) score += 25
-                    if (neighborhood.contains("ref")) score += 12
-                    if (neighborhood.contains("p/s")) score += 8
-                    if (neighborhood.contains("client")) score += 4
-
-                    // Penalize the top alphanumeric receipt number area.
-                    if (neighborhood.contains("recu") && !neighborhood.contains("pid")) {
-                        score -= 10
-                    }
-
-                    candidates += Candidate(left, right, score, index)
-                }
-            }
-        }
-
-        candidates
-            .sortedWith(
-                compareByDescending<Candidate> { it.score }
-                    .thenByDescending { it.lineIndex }
-            )
-            .firstOrNull()
-            ?.let { return it.left to it.right }
-
-        // OCR can lose the slash. Search for two long numeric-like tokens near
-        // PID / Réf. and nowhere else first.
-        val tokenRegex = Regex("[0-9OoIlLSsBb]{7,16}")
-
         lines.forEachIndexed { index, line ->
             val folded = fold(line)
-            if (!(folded.contains("pid") || folded.contains("ref"))) return@forEachIndexed
+            val previous = lines.getOrNull(index - 1)?.let(::fold).orEmpty()
+            val next = lines.getOrNull(index + 1)?.let(::fold).orEmpty()
+            val twoBack = lines.getOrNull(index - 2)?.let(::fold).orEmpty()
+            val twoAhead = lines.getOrNull(index + 2)?.let(::fold).orEmpty()
+            val context = listOf(twoBack, previous, folded, next, twoAhead).joinToString(" ")
 
-            val from = index
-            val to = (index + 4).coerceAtMost(lines.size)
-            val neighborhood = lines.subList(from, to).joinToString(" ")
+            extractIdentifiers(line).forEachIndexed { tokenOrder, value ->
+                var score = 10
+                if (value.length == 11) score += 20
+                if (value.startsWith("000")) score += 10
+                if (context.contains("pid")) score += 35
+                if (context.contains("ref")) score += 25
+                if (context.contains("p/s")) score += 15
+                if (context.contains("client")) score += 5
 
-            val tokens = tokenRegex.findAll(neighborhood)
-                .map { normalizeIdentifier(it.value) }
-                .filter { it.length in 7..16 }
-                .filterNot { looksLikePhoneNumber(it) }
-                .distinct()
-                .toList()
+                // The references are physically in the lower part of the receipt,
+                // so later OCR reading-order lines are preferred.
+                score += ((index.toDouble() / lines.size.coerceAtLeast(1)) * 15).toInt()
 
-            if (tokens.size >= 2) return tokens[0] to tokens[1]
-        }
-
-        // Last resort: two long numeric tokens in the lower portion of OCR
-        // reading order. This avoids mistaking the short top receipt code.
-        val lowerStart = (lines.size * 0.45).toInt().coerceAtLeast(0)
-        val lowerTokens = lines.drop(lowerStart)
-            .flatMap { line ->
-                tokenRegex.findAll(line)
-                    .map { normalizeIdentifier(it.value) }
-                    .toList()
+                candidates += Candidate(value, index, tokenOrder, score)
             }
-            .filter { it.length in 7..16 }
-            .filterNot { looksLikePhoneNumber(it) }
-            .distinct()
-
-        return if (lowerTokens.size >= 2) {
-            lowerTokens[0] to lowerTokens[1]
-        } else {
-            "" to ""
         }
+
+        // Search the neighborhood around any PID / Réf. label. This is deliberately
+        // ±8 lines because ML Kit can interleave the left/right receipt columns and
+        // place the second number several OCR lines away from the first one.
+        val labelIndexes = lines.mapIndexedNotNull { index, line ->
+            val f = fold(line)
+            if (f.contains("pid") || f.contains("ref") || f.contains("p/s")) index else null
+        }
+
+        if (labelIndexes.isNotEmpty()) {
+            val nearLabels = candidates
+                .map { candidate ->
+                    val distance = labelIndexes.minOf { kotlin.math.abs(it - candidate.lineIndex) }
+                    candidate.copy(score = candidate.score + (40 - distance * 4).coerceAtLeast(0))
+                }
+                .filter { candidate ->
+                    labelIndexes.any { kotlin.math.abs(it - candidate.lineIndex) <= 8 }
+                }
+                .sortedWith(
+                    compareByDescending<Candidate> { it.score }
+                        .thenBy { it.lineIndex }
+                )
+                .distinctBy { it.value }
+
+            if (nearLabels.size >= 2) {
+                // OCR reading order on these receipts normally keeps the left field
+                // (Contract) before the right field (Tier / Réf.).
+                val pair = nearLabels.take(2).sortedWith(
+                    compareBy<Candidate> { it.lineIndex }.thenBy { it.tokenOrder }
+                )
+                return pair[0].value to pair[1].value
+            }
+        }
+
+        // Last resort: choose the two strongest distinct long IDs from the lower
+        // half of OCR reading order. This catches receipts where PID / Réf. itself
+        // was not recognized at all.
+        val lowerStart = (lines.size * 0.45).toInt().coerceAtLeast(0)
+        val lower = candidates
+            .filter { it.lineIndex >= lowerStart }
+            .sortedWith(
+                compareByDescending<Candidate> { it.score }
+                    .thenBy { it.lineIndex }
+            )
+            .distinctBy { it.value }
+
+        if (lower.size >= 2) {
+            val pair = lower.take(2).sortedWith(
+                compareBy<Candidate> { it.lineIndex }.thenBy { it.tokenOrder }
+            )
+            return pair[0].value to pair[1].value
+        }
+
+        return "" to ""
     }
 
     private fun looksLikePhoneNumber(value: String): Boolean {
@@ -375,9 +438,13 @@ object ReceiptParser {
     private fun normalizeIdentifier(value: String): String {
         return value.uppercase()
             .replace('O', '0')
+            .replace('Q', '0')
             .replace('I', '1')
             .replace('L', '1')
+            .replace('Z', '2')
             .replace('S', '5')
+            .replace('G', '6')
+            .replace('T', '7')
             .replace('B', '8')
             .filter { it.isDigit() }
     }
