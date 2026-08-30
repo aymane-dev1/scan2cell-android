@@ -11,8 +11,8 @@ android {
         applicationId = "com.scan2cell.app"
         minSdk = 24
         targetSdk = 35
-        versionCode = 122
-        versionName = "1.2.2-local"
+        versionCode = 130
+        versionName = "1.3.0-fraud-check"
     }
 
     signingConfigs {

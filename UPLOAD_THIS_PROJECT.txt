@@ -1,0 +1,16 @@
+SCAN2CELL ANDROID FINAL v1.0.1
+
+This fixes the Kotlin compilation failure in the previous package.
+
+EASIEST UPDATE:
+1. Extract this ZIP.
+2. In the GitHub repository, upload ALL extracted contents and replace files.
+3. Confirm the repository root contains .github, app, build.gradle.kts,
+   gradle.properties, settings.gradle.kts and README.md.
+4. Commit changes.
+5. Open Actions and wait for the new run.
+6. Download Artifacts > Scan2Cell-Final-APK.
+7. Extract Scan2Cell-Final-v1.0.1.apk.
+
+The workflow now prints short compiler error lines at the end if a later build
+ever fails, instead of leaving only a huge Gradle stack trace.

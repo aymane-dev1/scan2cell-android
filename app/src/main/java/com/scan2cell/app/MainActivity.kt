@@ -54,6 +54,7 @@ class MainActivity : AppCompatActivity() {
                 treasuryNumber = intent.getStringExtra(ReceiptScannerActivity.EXTRA_TREASURY).orEmpty(),
                 clientName = intent.getStringExtra(ReceiptScannerActivity.EXTRA_NAME).orEmpty(),
                 contractNumber = intent.getStringExtra(ReceiptScannerActivity.EXTRA_CONTRACT).orEmpty(),
+                tierReference = intent.getStringExtra(ReceiptScannerActivity.EXTRA_TIER).orEmpty(),
                 amount = intent.getStringExtra(ReceiptScannerActivity.EXTRA_AMOUNT).orEmpty()
             )
             sendReceipt(receipt)

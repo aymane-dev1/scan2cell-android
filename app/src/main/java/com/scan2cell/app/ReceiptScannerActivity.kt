@@ -146,15 +146,16 @@ class ReceiptScannerActivity : AppCompatActivity() {
         binding.cameraControls.visibility = View.GONE
         binding.reviewPanel.visibility = View.VISIBLE
         binding.flashButton.visibility = View.GONE
-        binding.titleText.text = "Check the 4 fields"
-        binding.subtitleText.text = "Treasury = top boxed N°. Contract is resolved from Excel."
+        binding.titleText.text = "Check the 5 fields"
+        binding.subtitleText.text = "Check the values read from the paper before sending."
 
         binding.treasuryInput.setText(data.treasuryNumber)
         binding.nameInput.setText(data.clientName)
-        binding.contractInput.setText("")
-        binding.contractInput.hint = "Auto from BASE_FULL / BASE_SIMPLE"
-        binding.contractInput.isEnabled = false
-        binding.swapIdsButton.visibility = View.GONE
+        binding.contractInput.setText(data.contractNumber)
+        binding.tierInput.setText(data.tierReference)
+        binding.contractInput.isEnabled = true
+        binding.tierInput.isEnabled = true
+        binding.swapIdsButton.visibility = View.VISIBLE
         binding.amountInput.setText(data.amount)
         updateDetectedStatus(data)
     }
@@ -163,22 +164,24 @@ class ReceiptScannerActivity : AppCompatActivity() {
         val scannedCount = listOf(
             data.treasuryNumber,
             data.clientName,
+            data.contractNumber,
+            data.tierReference,
             data.amount
         ).count { it.isNotBlank() }
 
         binding.detectedStatus.text = when (scannedCount) {
-            3 -> "3 scanned fields ready • Contract will come from Excel"
-            2 -> "2 / 3 scanned • review the missing field • Contract from Excel"
-            else -> "$scannedCount / 3 scanned • review carefully • Contract from Excel"
+            5 -> "5 / 5 detected • ready to compare"
+            4 -> "4 / 5 detected • check the missing field"
+            else -> "$scannedCount / 5 detected • review the fields below"
         }
     }
 
     private fun swapIds() {
-        val treasury = binding.treasuryInput.text?.toString().orEmpty()
         val contract = binding.contractInput.text?.toString().orEmpty()
-        binding.treasuryInput.setText(contract)
-        binding.contractInput.setText(treasury)
-        showMessage("The two reference numbers were swapped.")
+        val tier = binding.tierInput.text?.toString().orEmpty()
+        binding.contractInput.setText(tier)
+        binding.tierInput.setText(contract)
+        showMessage("Contract and Tier / Réf. were swapped.")
     }
 
     private fun returnReceipt() {
@@ -186,6 +189,7 @@ class ReceiptScannerActivity : AppCompatActivity() {
             treasuryNumber = binding.treasuryInput.text?.toString()?.trim().orEmpty(),
             clientName = binding.nameInput.text?.toString()?.trim().orEmpty(),
             contractNumber = binding.contractInput.text?.toString()?.trim().orEmpty(),
+            tierReference = binding.tierInput.text?.toString()?.trim().orEmpty(),
             amount = binding.amountInput.text?.toString()?.trim().orEmpty()
         )
         if (data.detectedCount == 0) {
@@ -196,6 +200,7 @@ class ReceiptScannerActivity : AppCompatActivity() {
             putExtra(EXTRA_TREASURY, data.treasuryNumber)
             putExtra(EXTRA_NAME, data.clientName)
             putExtra(EXTRA_CONTRACT, data.contractNumber)
+            putExtra(EXTRA_TIER, data.tierReference)
             putExtra(EXTRA_AMOUNT, data.amount)
         })
         finish()
@@ -209,7 +214,7 @@ class ReceiptScannerActivity : AppCompatActivity() {
         binding.flashButton.visibility = View.VISIBLE
         binding.captureButton.isEnabled = true
         binding.titleText.text = "Receipt scanner"
-        binding.subtitleText.text = "Fit the full receipt inside the frame"
+        binding.subtitleText.text = "Fit the full receipt inside the frame • 5 fields"
         binding.receiptImage.setImageDrawable(null)
         recycleCapturedBitmapExcept(null)
         capturedBitmap = null
@@ -254,6 +259,7 @@ class ReceiptScannerActivity : AppCompatActivity() {
         const val EXTRA_TREASURY = "receipt_treasury"
         const val EXTRA_NAME = "receipt_name"
         const val EXTRA_CONTRACT = "receipt_contract"
+        const val EXTRA_TIER = "receipt_tier"
         const val EXTRA_AMOUNT = "receipt_amount"
     }
 }

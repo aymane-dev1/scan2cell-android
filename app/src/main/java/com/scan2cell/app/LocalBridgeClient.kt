@@ -158,10 +158,22 @@ class LocalBridgeClient(private val context: Context) {
         deviceId: String,
         receipt: ReceiptData
     ): SendResult {
+        val contract = receipt.contractNumber.trim()
+        val tier = receipt.tierReference.trim()
+        val combinedReferences = when {
+            contract.isNotBlank() && tier.isNotBlank() -> "$contract|$tier"
+            contract.isNotBlank() -> contract
+            tier.isNotBlank() -> "|$tier"
+            else -> ""
+        }
+
         val payload = JSONObject()
             .put("treasuryNumber", receipt.treasuryNumber)
             .put("clientName", receipt.clientName)
-            .put("contractNumber", receipt.contractNumber)
+            // Compatibility with the already-working PC add-in:
+            // Reçus column D receives "contract|tier" as ONE text value.
+            .put("contractNumber", combinedReferences)
+            .put("tierReference", receipt.tierReference)
             .put("amount", receipt.amount)
             .put("requestId", UUID.randomUUID().toString())
             .toString()

@@ -9,8 +9,11 @@ import java.text.Normalizer
  * - N° Trésorerie = TOP boxed alphanumeric code, e.g. 0147UDAS.
  * - Nom & Prénom = value after "Nom client".
  * - Montant = value beside/near "Montant reçu".
- * - N° Contrat is NOT guessed from the bottom PID/reference pair.
- *   Excel resolves the contract from BASE_FULL / BASE_SIMPLE using treasury.
+ * - N° Contrat = LEFT long number in the bottom reference pair.
+ * - Tiers / Réf. = RIGHT long number in the bottom reference pair.
+ *
+ * These values are scanned from the PAPER and sent to Excel for comparison
+ * against BASE_FULL / BASE_SIMPLE. They are never replaced by database values.
  */
 object ReceiptParser {
     fun parse(lines: List<String>): ReceiptData {
@@ -20,15 +23,14 @@ object ReceiptParser {
 
         val treasury = findTreasuryNumber(cleaned)
         val name = findClientName(cleaned)
+        val references = findReferencePair(cleaned)
         val amount = findAmount(cleaned)
 
         return ReceiptData(
             treasuryNumber = treasury,
             clientName = name,
-            // The receipt does not explicitly label a contract number.
-            // Excel resolves the real contract from BASE_FULL / BASE_SIMPLE
-            // using the correctly scanned N° Trésorerie.
-            contractNumber = "",
+            contractNumber = references.first,
+            tierReference = references.second,
             amount = amount
         )
     }
