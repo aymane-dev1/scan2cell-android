@@ -138,15 +138,10 @@ class MainActivity : AppCompatActivity() {
 
         lifecycleScope.launch {
             try {
-                val endpoint = withContext(Dispatchers.IO) {
-                    bridge.discover(
-                        lastBaseUrl = prefs.getString(KEY_BASE_URL, null),
-                        manualIp = binding.ipInput.text?.toString()
-                    )
-                }
                 val result = withContext(Dispatchers.IO) {
-                    bridge.pair(
-                        endpoint = endpoint,
+                    bridge.pairByCode(
+                        lastBaseUrl = prefs.getString(KEY_BASE_URL, null),
+                        manualIp = binding.ipInput.text?.toString(),
                         code = code,
                         deviceId = deviceId(),
                         deviceName = deviceName()
@@ -154,7 +149,7 @@ class MainActivity : AppCompatActivity() {
                 }
 
                 prefs.edit()
-                    .putString(KEY_BASE_URL, endpoint.baseUrl)
+                    .putString(KEY_BASE_URL, result.baseUrl)
                     .putString(KEY_TOKEN, result.token)
                     .putString(KEY_SERVER_ID, result.serverId)
                     .putString(KEY_SERVER_NAME, result.serverName)

@@ -1,5 +1,6 @@
 package com.scan2cell.app
 
+import com.google.mlkit.vision.text.Text
 import java.text.Normalizer
 
 /**
@@ -9,8 +10,10 @@ import java.text.Normalizer
  * - N° Trésorerie = TOP boxed alphanumeric code, e.g. 0147UDAS.
  * - Nom & Prénom = value after "Nom client".
  * - Montant = value beside/near "Montant reçu".
- * - N° Contrat = LEFT long number in the bottom reference pair.
- * - Tiers / Réf. = RIGHT long number in the bottom reference pair.
+ * - Standard receipt (PID): N° Contrat = LEFT long number, Tiers / Réf. = RIGHT long number.
+ * - Group receipt (PSD): one alphanumeric PSD code is copied to BOTH Contract and Tier.
+ *   Example: J1ME0000303 -> Contract=J1ME0000303 and Tier=J1ME0000303.
+ * - Group/PSD receipts do not require a client-name field.
  *
  * These values are scanned from the PAPER and sent to Excel for comparison
  * against BASE_FULL / BASE_SIMPLE. They are never replaced by database values.
@@ -22,8 +25,13 @@ object ReceiptParser {
             .filter { it.isNotBlank() }
 
         val treasury = findTreasuryNumber(cleaned)
-        val name = findClientName(cleaned)
-        val references = findReferencePair(cleaned)
+        val psdCode = findPsdGroupCode(cleaned, treasury)
+        val references = if (psdCode.isNotBlank()) {
+            psdCode to psdCode
+        } else {
+            findReferencePair(cleaned)
+        }
+        val name = if (psdCode.isNotBlank()) "" else findClientName(cleaned)
         val amount = findAmount(cleaned)
 
         return ReceiptData(
@@ -35,6 +43,53 @@ object ReceiptParser {
         )
     }
 
+    /**
+     * Geometry-aware parser. ML Kit sometimes reads the two bottom IDs in an odd
+     * text order (or several OCR lines apart). Here we use the actual position on
+     * the receipt: Contract is the LEFT long ID, Tier / Réf. is the RIGHT long ID.
+     */
+    fun parse(recognized: Text): ReceiptData {
+        val lines = recognized.textBlocks
+            .flatMap { block -> block.lines.map { it.text } }
+            .ifEmpty { recognized.text.lines() }
+
+        val base = parse(lines)
+
+        // A PSD/group receipt intentionally has ONE alphanumeric code used for both
+        // Contract and Tier. Do not let the normal two-number geometry parser
+        // overwrite that code with unrelated footer/date digits.
+        if (isPsdGroupReceipt(base)) return base
+
+        val geometric = findReferencePairByGeometry(recognized)
+
+        return base.copy(
+            contractNumber = geometric.first.ifBlank { base.contractNumber },
+            tierReference = geometric.second.ifBlank { base.tierReference }
+        )
+    }
+
+    /**
+     * Used by the scanner's high-resolution bottom-zone OCR pass.
+     * This deliberately returns only the two long paper identifiers.
+     */
+    fun parseReferencePairOnly(recognized: Text): Pair<String, String> {
+        val lines = recognized.textBlocks
+            .flatMap { block -> block.lines.map { it.text } }
+            .ifEmpty { recognized.text.lines() }
+
+        // The dedicated bottom crop is ideal for group/PSD receipts because the
+        // PSD label and its single code are usually in this exact area.
+        val psdCode = findPsdGroupCode(lines)
+        if (psdCode.isNotBlank()) return psdCode to psdCode
+
+        val geometric = findReferencePairByGeometry(recognized)
+        if (geometric.first.isNotBlank() && geometric.second.isNotBlank()) {
+            return geometric
+        }
+
+        return findReferencePair(lines)
+    }
+
     private fun fold(value: String): String {
         return Normalizer.normalize(value, Normalizer.Form.NFD)
             .replace(Regex("\\p{Mn}+"), "")
@@ -42,6 +97,100 @@ object ReceiptParser {
             .replace('’', '\'')
     }
 
+
+
+    /**
+     * Detect the group-receipt format where the bottom label is PSD and only one
+     * alphanumeric reference exists. That ONE paper code is used by the database
+     * in both Contract and Tier columns.
+     *
+     * Typical OCR layouts:
+     *   PSD   J1ME0000303 /
+     * or
+     *   PSD
+     *   J1ME0000303 /
+     *
+     * We deliberately search only near a PSD label so the top N° Trésorerie code
+     * cannot be mistaken for the group reference.
+     */
+    private fun findPsdGroupCode(
+        lines: List<String>,
+        treasuryToExclude: String = ""
+    ): String {
+        data class Candidate(val value: String, val score: Int, val index: Int)
+
+        val labelIndexes = lines.mapIndexedNotNull { index, line ->
+            val f = fold(line)
+            val compact = f.replace(Regex("[^a-z0-9]"), "")
+            if (
+                Regex("(^|[^a-z0-9])psd([^a-z0-9]|$)").containsMatchIn(f) ||
+                compact == "psd" || compact.startsWith("psd") ||
+                compact == "p5d" || compact.startsWith("p5d")
+            ) index else null
+        }
+        if (labelIndexes.isEmpty()) return ""
+
+        fun plausible(value: String): Boolean {
+            if (value.length !in 7..20) return false
+            if (treasuryToExclude.isNotBlank() && value == treasuryToExclude.uppercase()) return false
+            if (value.count { it.isDigit() } < 3) return false
+            if (value.count { it.isLetter() } < 1) return false
+            if (value.startsWith("PSD") || value.startsWith("P5D")) return false
+            if (value in setOf("MICROFINANCE", "ENCAISSEMENT", "SIGNATURE", "CLIENT")) return false
+            return true
+        }
+
+        fun extract(line: String): List<String> {
+            val upper = line.uppercase()
+            val found = mutableListOf<String>()
+
+            // Normal case: J1ME0000303
+            Regex("(?<![A-Z0-9])([A-Z0-9]{7,20})(?![A-Z0-9])")
+                .findAll(upper)
+                .map { it.groupValues[1] }
+                .filter(::plausible)
+                .forEach { found += it }
+
+            // OCR can split the code: J1ME 0000303 / J1ME-0000303.
+            Regex("(?<![A-Z0-9])([A-Z0-9]{2,8}(?:[ ._-]+[A-Z0-9]{2,10}){1,3})(?![A-Z0-9])")
+                .findAll(upper)
+                .map { it.groupValues[1].replace(Regex("[^A-Z0-9]"), "") }
+                .filter(::plausible)
+                .forEach { found += it }
+
+            return found.distinct()
+        }
+
+        val candidates = mutableListOf<Candidate>()
+
+        lines.forEachIndexed { index, line ->
+            val nearest = labelIndexes.minOf { kotlin.math.abs(it - index) }
+            if (nearest > 3) return@forEachIndexed
+
+            extract(line).forEach { value ->
+                var score = 100 - nearest * 20
+                if (value.length in 10..12) score += 20
+                if (index >= labelIndexes.minOrNull()!!) score += 8
+                if (line.uppercase().contains("PSD")) score += 15
+                candidates += Candidate(value, score, index)
+            }
+        }
+
+        return candidates
+            .sortedWith(compareByDescending<Candidate> { it.score }.thenBy { it.index })
+            .firstOrNull()
+            ?.value
+            .orEmpty()
+    }
+
+    private fun isPsdGroupReceipt(data: ReceiptData): Boolean {
+        val contract = data.contractNumber.trim()
+        val tier = data.tierReference.trim()
+        return contract.isNotBlank() &&
+            contract.equals(tier, ignoreCase = true) &&
+            contract.any { it.isLetter() } &&
+            contract.any { it.isDigit() }
+    }
 
     private fun findTreasuryNumber(lines: List<String>): String {
         data class Candidate(val value: String, val score: Int, val index: Int)
@@ -88,7 +237,7 @@ object ReceiptParser {
                 if (index <= 10) score += 5
 
                 // Do not confuse bottom PID/reference material with treasury.
-                if (folded.contains("pid") || folded.contains("ref")) score -= 40
+                if (folded.contains("pid") || folded.contains("psd") || folded.contains("ref")) score -= 40
 
                 candidates += Candidate(raw, score, index)
             }
@@ -430,6 +579,163 @@ object ReceiptParser {
         return "" to ""
     }
 
+    private fun findReferencePairByGeometry(recognized: Text): Pair<String, String> {
+        data class GeoCandidate(
+            val value: String,
+            val centerX: Float,
+            val centerY: Float,
+            val score: Int,
+            val order: Int
+        )
+
+        data class RawIdentifier(val value: String, val start: Int)
+
+        fun likely(value: String): Boolean {
+            if (value.length !in 9..14) return false
+            if (!value.startsWith("0")) return false
+            if (looksLikePhoneNumber(value)) return false
+            return true
+        }
+
+        fun rawIdentifiers(text: String): List<RawIdentifier> {
+            val out = mutableListOf<RawIdentifier>()
+            val chars = "0-9OoQqIiLlZzSsGgBbTt"
+
+            // Best case: both 9-14-character IDs are returned on one OCR line.
+            val pair = Regex(
+                "([$chars]{9,14})\\s*(?:[/|\\\\]|\\s+)\\s*([$chars]{9,14})",
+                RegexOption.IGNORE_CASE
+            )
+            pair.findAll(text).forEach { m ->
+                val left = normalizeIdentifier(m.groupValues[1])
+                val right = normalizeIdentifier(m.groupValues[2])
+                if (likely(left)) out += RawIdentifier(left, m.groups[1]?.range?.first ?: m.range.first)
+                if (likely(right)) out += RawIdentifier(right, m.groups[2]?.range?.first ?: m.range.first)
+            }
+
+            // Normal single token.
+            val token = Regex("(?<![A-Z0-9])([$chars]{9,14})(?![A-Z0-9])", RegexOption.IGNORE_CASE)
+            token.findAll(text).forEach { m ->
+                val value = normalizeIdentifier(m.groupValues[1])
+                if (likely(value)) out += RawIdentifier(value, m.range.first)
+            }
+
+            // OCR can split one identifier: 0000 666 5874 / 00000-234329.
+            val broken = Regex(
+                "(?<![A-Z0-9])([$chars]{2,6}(?:[ ._-]+[$chars]{2,7}){1,4})(?![A-Z0-9])",
+                RegexOption.IGNORE_CASE
+            )
+            broken.findAll(text).forEach { m ->
+                val value = normalizeIdentifier(m.groupValues[1])
+                if (likely(value)) out += RawIdentifier(value, m.range.first)
+            }
+
+            return out.distinctBy { it.value }
+        }
+
+        val allLines = recognized.textBlocks.flatMap { it.lines }
+        if (allLines.isEmpty()) return "" to ""
+
+        val maxBottom = allLines.mapNotNull { it.boundingBox?.bottom }.maxOrNull()?.coerceAtLeast(1) ?: 1
+        val labels = allLines.mapNotNull { line ->
+            val f = fold(line.text)
+            if (f.contains("pid") || f.contains("ref") || f.contains("p/s")) {
+                line.boundingBox?.let { box -> (box.centerY()).toFloat() }
+            } else null
+        }
+
+        val candidates = mutableListOf<GeoCandidate>()
+        var order = 0
+
+        allLines.forEach { line ->
+            val box = line.boundingBox ?: return@forEach
+            val ids = rawIdentifiers(line.text)
+            ids.forEach { raw ->
+                val fraction = if (line.text.length <= 1) 0.5f
+                    else (raw.start.toFloat() / (line.text.length - 1).toFloat()).coerceIn(0f, 1f)
+                val x = box.left + box.width() * fraction
+                val y = box.centerY().toFloat()
+
+                var score = 20
+                if (raw.value.length == 11) score += 45
+                if (raw.value.startsWith("000")) score += 20
+                if (y >= maxBottom * 0.45f) score += 25
+                if (y >= maxBottom * 0.60f) score += 10
+
+                if (labels.isNotEmpty()) {
+                    val dy = labels.minOf { kotlin.math.abs(it - y) }
+                    score += (55 - (dy / maxBottom * 120).toInt()).coerceAtLeast(0)
+                }
+
+                candidates += GeoCandidate(raw.value, x, y, score, order++)
+            }
+
+            // Elements give more accurate X coordinates when ML Kit separated the IDs.
+            line.elements.forEach { element ->
+                val ebox = element.boundingBox ?: return@forEach
+                rawIdentifiers(element.text).forEach { raw ->
+                    val value = raw.value
+                    val y = ebox.centerY().toFloat()
+                    var score = 30
+                    if (value.length == 11) score += 45
+                    if (value.startsWith("000")) score += 20
+                    if (y >= maxBottom * 0.45f) score += 25
+                    if (labels.isNotEmpty()) {
+                        val dy = labels.minOf { kotlin.math.abs(it - y) }
+                        score += (55 - (dy / maxBottom * 120).toInt()).coerceAtLeast(0)
+                    }
+                    candidates += GeoCandidate(value, ebox.centerX().toFloat(), y, score, order++)
+                }
+            }
+        }
+
+        val bestByValue = candidates
+            .groupBy { it.value }
+            .mapNotNull { (_, sameValue) -> sameValue.maxByOrNull { it.score } }
+            .sortedByDescending { it.score }
+
+        if (bestByValue.size < 2) return "" to ""
+
+        var bestA: GeoCandidate? = null
+        var bestB: GeoCandidate? = null
+        var bestPairScore = Int.MIN_VALUE
+
+        for (i in 0 until minOf(bestByValue.size, 10)) {
+            for (j in i + 1 until minOf(bestByValue.size, 10)) {
+                val a = bestByValue[i]
+                val b = bestByValue[j]
+                val verticalDistance = kotlin.math.abs(a.centerY - b.centerY)
+                val horizontalDistance = kotlin.math.abs(a.centerX - b.centerX)
+
+                var pairScore = a.score + b.score
+                // The two receipt IDs are printed on the same bottom row / area.
+                pairScore += (70 - (verticalDistance / maxBottom * 180).toInt()).coerceAtLeast(-25)
+                // Prefer a true left/right pair over two values stacked in one column.
+                if (horizontalDistance > 20f) pairScore += 20
+
+                if (pairScore > bestPairScore) {
+                    bestPairScore = pairScore
+                    bestA = a
+                    bestB = b
+                }
+            }
+        }
+
+        val a = bestA ?: return "" to ""
+        val b = bestB ?: return "" to ""
+
+        // Physical receipt layout decides the mapping, not OCR reading order.
+        return if (a.centerX < b.centerX) {
+            a.value to b.value
+        } else if (b.centerX < a.centerX) {
+            b.value to a.value
+        } else if (a.order <= b.order) {
+            a.value to b.value
+        } else {
+            b.value to a.value
+        }
+    }
+
     private fun looksLikePhoneNumber(value: String): Boolean {
         // Al Amana footer phone/fax numbers are usually 10 digits beginning 05.
         return value.length == 10 && value.startsWith("05")
@@ -452,7 +758,7 @@ object ReceiptParser {
     private fun looksLikeLabel(value: String): Boolean {
         val f = fold(value)
         return listOf(
-            "agence", "date", "montant", "signature", "ref", "pid",
+            "agence", "date", "montant", "signature", "ref", "pid", "psd",
             "recu", "copie client", "cachet"
         ).any { f.startsWith(it) }
     }

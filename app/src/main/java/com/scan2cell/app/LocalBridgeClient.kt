@@ -27,7 +27,8 @@ class LocalBridgeClient(private val context: Context) {
         val token: String,
         val serverName: String,
         val serverId: String,
-        val excelConnected: Boolean
+        val excelConnected: Boolean,
+        val baseUrl: String
     )
 
     data class SendResult(
@@ -115,9 +116,89 @@ class LocalBridgeClient(private val context: Context) {
                 token = json.getString("token"),
                 serverName = json.optString("serverName", endpoint.name),
                 serverId = json.optString("serverId", endpoint.serverId),
-                excelConnected = json.optBoolean("excelConnected")
+                excelConnected = json.optBoolean("excelConnected"),
+                baseUrl = endpoint.baseUrl
             )
         }
+    }
+
+
+    /**
+     * Pair by six-digit code across ALL Scan2Cell PCs visible on the LAN.
+     *
+     * This is important in an office where several coworkers run Scan2Cell:
+     * UDP discovery may receive multiple replies, and the first reply is not
+     * necessarily the PC whose code is visible in Excel.
+     *
+     * We therefore try the code against each discovered bridge until one
+     * accepts it. A wrong-code response does not modify that PC's state.
+     */
+    fun pairByCode(
+        lastBaseUrl: String?,
+        manualIp: String?,
+        code: String,
+        deviceId: String,
+        deviceName: String
+    ): PairResult {
+        // Manual IP always means "use exactly this PC".
+        normalizeManualAddress(manualIp)?.let { address ->
+            return pair(
+                endpoint = probe(address),
+                code = code,
+                deviceId = deviceId,
+                deviceName = deviceName
+            )
+        }
+
+        val candidates = linkedMapOf<String, ServerEndpoint>()
+
+        // Keep the previously paired PC as one candidate, but do NOT stop there.
+        if (!lastBaseUrl.isNullOrBlank()) {
+            runCatching { probe(lastBaseUrl) }
+                .getOrNull()
+                ?.let { endpoint ->
+                    candidates[endpoint.serverId.ifBlank { endpoint.baseUrl }] = endpoint
+                }
+        }
+
+        // Collect every Scan2Cell PC replying on the current Wi-Fi.
+        for (endpoint in discoverAllWithUdp()) {
+            candidates[endpoint.serverId.ifBlank { endpoint.baseUrl }] = endpoint
+        }
+
+        if (candidates.isEmpty()) {
+            throw IllegalStateException(
+                "No Scan2Cell PC was found. Keep the Excel pane open, use the same Wi-Fi, and allow Scan2Cell through Windows Firewall."
+            )
+        }
+
+        var lastNetworkError: Exception? = null
+
+        for (endpoint in candidates.values) {
+            try {
+                return pair(
+                    endpoint = endpoint,
+                    code = code,
+                    deviceId = deviceId,
+                    deviceName = deviceName
+                )
+            } catch (error: Exception) {
+                val message = error.message.orEmpty()
+                // Expected when this is another coworker's PC. Keep trying.
+                if (message.contains("Wrong or expired pairing code", ignoreCase = true)) {
+                    continue
+                }
+                lastNetworkError = error
+            }
+        }
+
+        if (lastNetworkError != null && candidates.size == 1) {
+            throw lastNetworkError
+        }
+
+        throw IllegalStateException(
+            "No Scan2Cell PC accepted this code. Use the fresh six-digit code shown on the PC you want to connect to."
+        )
     }
 
     fun send(
@@ -243,6 +324,65 @@ class LocalBridgeClient(private val context: Context) {
         throw IllegalStateException(
             "No Scan2Cell PC was found. Keep the Excel pane open, use the same Wi-Fi, and allow the Windows Firewall prompt."
         )
+    }
+
+
+    private fun discoverAllWithUdp(): List<ServerEndpoint> {
+        val message = "SCAN2CELL_DISCOVER_V1".toByteArray(StandardCharsets.UTF_8)
+        val found = linkedMapOf<String, ServerEndpoint>()
+
+        DatagramSocket().use { socket ->
+            socket.broadcast = true
+            socket.soTimeout = 450
+
+            val targets = linkedSetOf(InetAddress.getByName("255.255.255.255"))
+            wifiBroadcastAddress()?.let { address -> targets.add(address) }
+
+            repeat(4) {
+                for (target in targets) {
+                    runCatching {
+                        socket.send(DatagramPacket(message, message.size, target, DISCOVERY_PORT))
+                    }
+                }
+
+                val deadline = System.currentTimeMillis() + 500L
+                while (System.currentTimeMillis() < deadline) {
+                    try {
+                        val buffer = ByteArray(2048)
+                        val packet = DatagramPacket(buffer, buffer.size)
+                        socket.receive(packet)
+
+                        val response = String(
+                            packet.data,
+                            packet.offset,
+                            packet.length,
+                            StandardCharsets.UTF_8
+                        )
+                        val json = JSONObject(response)
+                        if (json.optString("type") != "SCAN2CELL_REPLY_V1") continue
+
+                        val port = json.optInt("port", PHONE_PORT)
+                        val serverId = json.optString("serverId")
+                        val baseUrl = "http://${packet.address.hostAddress}:$port"
+
+                        val endpoint = ServerEndpoint(
+                            baseUrl = baseUrl,
+                            name = json.optString("name", "Excel PC"),
+                            serverId = serverId,
+                            excelConnected = false
+                        )
+
+                        found[serverId.ifBlank { baseUrl }] = endpoint
+                    } catch (_: SocketTimeoutException) {
+                        break
+                    } catch (_: Exception) {
+                        // Ignore malformed/duplicate replies and keep collecting.
+                    }
+                }
+            }
+        }
+
+        return found.values.toList()
     }
 
     private fun normalizeManualAddress(value: String?): String? {
