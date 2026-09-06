@@ -19,6 +19,7 @@ import androidx.camera.core.ImageProxy
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.core.content.ContextCompat
+import androidx.core.widget.doAfterTextChanged
 import com.google.android.material.snackbar.Snackbar
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
@@ -35,6 +36,7 @@ class ReceiptScannerActivity : AppCompatActivity() {
     private var torchEnabled = false
     private var capturedBitmap: Bitmap? = null
     private var psdGroupMode = false
+    private var syncingPsdCode = false
     private val recognizer by lazy { TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS) }
 
     private val permissionLauncher =
@@ -59,6 +61,20 @@ class ReceiptScannerActivity : AppCompatActivity() {
         binding.retakeButton.setOnClickListener { showCameraMode() }
         binding.swapIdsButton.setOnClickListener { swapIds() }
         binding.sendReceiptButton.setOnClickListener { returnReceipt() }
+
+        // PSD group receipts store one paper code in BOTH Contract and Tier.
+        // Keep both fields editable; correcting either one mirrors the correction
+        // to the other field automatically.
+        binding.contractInput.doAfterTextChanged { editable ->
+            if (psdGroupMode && !syncingPsdCode) {
+                mirrorPsdCode(binding.tierInput.text?.toString().orEmpty(), editable?.toString().orEmpty(), toTier = true)
+            }
+        }
+        binding.tierInput.doAfterTextChanged { editable ->
+            if (psdGroupMode && !syncingPsdCode) {
+                mirrorPsdCode(binding.contractInput.text?.toString().orEmpty(), editable?.toString().orEmpty(), toTier = false)
+            }
+        }
         requestCamera()
     }
 
@@ -131,13 +147,13 @@ class ReceiptScannerActivity : AppCompatActivity() {
             .addOnSuccessListener { recognized ->
                 val primary = ReceiptParser.parse(recognized)
 
-                // If the full-page pass already saw both paper IDs, keep it fast.
-                if (primary.contractNumber.isNotBlank() && primary.tierReference.isNotBlank()) {
+                // Fast path: the fraud check only requires Treasury + Contract + Amount.
+                // Tier is best-effort on standard PID receipts and is automatically
+                // mirrored from the PSD code on group receipts. Do not waste extra
+                // OCR passes chasing an optional Tier.
+                if (hasRequiredFields(primary)) {
                     showReview(primary)
                 } else {
-                    // Small bottom IDs are the hardest part of the receipt. Run a
-                    // dedicated, enlarged OCR pass instead of pretending a missing
-                    // Tier is acceptable.
                     recognizeBottomReferences(bitmap, primary)
                 }
             }
@@ -148,18 +164,25 @@ class ReceiptScannerActivity : AppCompatActivity() {
             }
     }
 
-    private fun recognizeBottomReferences(bitmap: Bitmap, primary: ReceiptData) {
-        showLoading(true, "Reading Contract + Tier / Réf.…")
+    private fun hasRequiredFields(data: ReceiptData): Boolean {
+        return data.treasuryNumber.isNotBlank() &&
+            data.contractNumber.isNotBlank() &&
+            data.amount.isNotBlank()
+    }
 
-        // The two long identifiers are printed in the lower half of the receipt.
-        // Excluding the very bottom footer also reduces telephone/fax false hits.
+    private fun recognizeBottomReferences(bitmap: Bitmap, primary: ReceiptData) {
+        showLoading(true, "Reading the bottom reference…")
+
+        // One targeted pass over the lower receipt area. 2.15x is enough for the
+        // small code while staying noticeably faster than the older 2.6x + 3x
+        // sequential multi-pass chain.
         val bottomBand = cropAndUpscale(
             source = bitmap,
             leftFraction = 0.0f,
-            topFraction = 0.46f,
+            topFraction = 0.43f,
             rightFraction = 1.0f,
-            bottomFraction = 0.92f,
-            scale = 2.6f
+            bottomFraction = 0.90f,
+            scale = 2.15f
         )
 
         recognizer.process(InputImage.fromBitmap(bottomBand, 0))
@@ -171,101 +194,45 @@ class ReceiptScannerActivity : AppCompatActivity() {
                 )
                 recycleIfTemporary(bottomBand)
 
-                if (merged.contractNumber.isNotBlank() && merged.tierReference.isNotBlank()) {
+                if (merged.contractNumber.isNotBlank()) {
                     showReview(merged)
                 } else {
-                    recognizeLeftAndRightReferences(bitmap, merged)
+                    recognizeContractFallback(bitmap, merged)
                 }
             }
             .addOnFailureListener {
                 recycleIfTemporary(bottomBand)
-                // The split pass is independent, so still try it if the whole
-                // bottom-band OCR fails.
-                recognizeLeftAndRightReferences(bitmap, primary)
+                recognizeContractFallback(bitmap, primary)
             }
     }
 
-    private fun recognizeLeftAndRightReferences(bitmap: Bitmap, primary: ReceiptData) {
-        showLoading(true, "Reading the two bottom numbers separately…")
+    private fun recognizeContractFallback(bitmap: Bitmap, primary: ReceiptData) {
+        showLoading(true, "Reading Contract / PSD code…")
 
-        val leftCrop = cropAndUpscale(
+        // Final fallback: one left/center crop only. We no longer run a separate
+        // right-side Tier pass because Tier is not part of the fraud verdict.
+        val crop = cropAndUpscale(
             source = bitmap,
             leftFraction = 0.0f,
-            topFraction = 0.46f,
-            rightFraction = 0.58f,
-            bottomFraction = 0.92f,
-            scale = 3.0f
+            topFraction = 0.44f,
+            rightFraction = 0.76f,
+            bottomFraction = 0.90f,
+            scale = 2.45f
         )
 
-        recognizer.process(InputImage.fromBitmap(leftCrop, 0))
-            .addOnSuccessListener { leftText ->
-                val leftId = extractBestReference(
-                    leftText.text,
-                    exclude = setOf(primary.tierReference).filter { it.isNotBlank() }.toSet()
+        recognizer.process(InputImage.fromBitmap(crop, 0))
+            .addOnSuccessListener { text ->
+                val pair = ReceiptParser.parseReferencePairOnly(text)
+                recycleIfTemporary(crop)
+                showReview(
+                    primary.copy(
+                        contractNumber = pair.first.ifBlank { primary.contractNumber },
+                        tierReference = pair.second.ifBlank { primary.tierReference }
+                    )
                 )
-                recycleIfTemporary(leftCrop)
-
-                val contract = primary.contractNumber.ifBlank { leftId }
-
-                val rightCrop = cropAndUpscale(
-                    source = bitmap,
-                    leftFraction = 0.42f,
-                    topFraction = 0.46f,
-                    rightFraction = 1.0f,
-                    bottomFraction = 0.92f,
-                    scale = 3.0f
-                )
-
-                recognizer.process(InputImage.fromBitmap(rightCrop, 0))
-                    .addOnSuccessListener { rightText ->
-                        val excluded = setOf(contract, leftId, primary.tierReference)
-                            .filter { it.isNotBlank() }
-                            .toSet()
-                        val rightId = extractBestReference(rightText.text, excluded)
-                        recycleIfTemporary(rightCrop)
-
-                        val tier = primary.tierReference.ifBlank { rightId }
-                        showReview(
-                            primary.copy(
-                                contractNumber = contract,
-                                tierReference = tier
-                            )
-                        )
-                    }
-                    .addOnFailureListener {
-                        recycleIfTemporary(rightCrop)
-                        showReview(primary.copy(contractNumber = contract))
-                    }
             }
             .addOnFailureListener {
-                recycleIfTemporary(leftCrop)
-                // If the left crop fails, the existing full-page Contract is still
-                // useful. Try the right side directly for Tier.
-                recognizeRightReferenceOnly(bitmap, primary)
-            }
-    }
-
-    private fun recognizeRightReferenceOnly(bitmap: Bitmap, primary: ReceiptData) {
-        val rightCrop = cropAndUpscale(
-            source = bitmap,
-            leftFraction = 0.42f,
-            topFraction = 0.46f,
-            rightFraction = 1.0f,
-            bottomFraction = 0.92f,
-            scale = 3.0f
-        )
-
-        recognizer.process(InputImage.fromBitmap(rightCrop, 0))
-            .addOnSuccessListener { rightText ->
-                val rightId = extractBestReference(
-                    rightText.text,
-                    exclude = setOf(primary.contractNumber).filter { it.isNotBlank() }.toSet()
-                )
-                recycleIfTemporary(rightCrop)
-                showReview(primary.copy(tierReference = primary.tierReference.ifBlank { rightId }))
-            }
-            .addOnFailureListener {
-                recycleIfTemporary(rightCrop)
+                recycleIfTemporary(crop)
                 showReview(primary)
             }
     }
@@ -372,19 +339,20 @@ class ReceiptScannerActivity : AppCompatActivity() {
         binding.flashButton.visibility = View.GONE
         psdGroupMode = isPsdGroupReceipt(data)
 
-        binding.titleText.text = if (psdGroupMode) "Group receipt • PSD" else "Check the 5 fields"
+        binding.titleText.text = if (psdGroupMode) "Group receipt • PSD" else "Check receipt"
         binding.subtitleText.text = if (psdGroupMode) {
-            "One PSD code is used for both Contract and Tier. Name is optional."
+            "One PSD code is used for both Contract and Tier. Edit either field to correct both."
         } else {
             "Check the values read from the paper before sending."
         }
 
         binding.treasuryInput.setText(data.treasuryNumber)
+        binding.nameInputLayout.visibility = if (psdGroupMode) View.GONE else View.VISIBLE
         binding.nameInput.setText(if (psdGroupMode) "" else data.clientName)
         binding.contractInput.setText(data.contractNumber)
         binding.tierInput.setText(data.tierReference)
         binding.contractInput.isEnabled = true
-        binding.tierInput.isEnabled = !psdGroupMode
+        binding.tierInput.isEnabled = true
         binding.swapIdsButton.visibility = if (psdGroupMode) View.GONE else View.VISIBLE
         binding.amountInput.setText(data.amount)
         updateDetectedStatus(data)
@@ -405,18 +373,16 @@ class ReceiptScannerActivity : AppCompatActivity() {
             return
         }
 
-        val scannedCount = listOf(
+        val requiredCount = listOf(
             data.treasuryNumber,
-            data.clientName,
             data.contractNumber,
-            data.tierReference,
             data.amount
         ).count { it.isNotBlank() }
 
-        binding.detectedStatus.text = when (scannedCount) {
-            5 -> "5 / 5 detected • ready to compare"
-            4 -> "4 / 5 detected • check the missing field"
-            else -> "$scannedCount / 5 detected • review the fields below"
+        binding.detectedStatus.text = if (requiredCount == 3) {
+            "3 / 3 required fields detected • ready"
+        } else {
+            "$requiredCount / 3 required fields detected • review below"
         }
     }
 
@@ -429,6 +395,18 @@ class ReceiptScannerActivity : AppCompatActivity() {
             contract.any { it.isDigit() }
     }
 
+    private fun mirrorPsdCode(currentTarget: String, newValue: String, toTier: Boolean) {
+        if (currentTarget == newValue) return
+        syncingPsdCode = true
+        try {
+            val target = if (toTier) binding.tierInput else binding.contractInput
+            target.setText(newValue)
+            target.setSelection(newValue.length)
+        } finally {
+            syncingPsdCode = false
+        }
+    }
+
     private fun swapIds() {
         val contract = binding.contractInput.text?.toString().orEmpty()
         val tier = binding.tierInput.text?.toString().orEmpty()
@@ -439,12 +417,14 @@ class ReceiptScannerActivity : AppCompatActivity() {
 
     private fun returnReceipt() {
         val contract = binding.contractInput.text?.toString()?.trim().orEmpty()
+        val tier = binding.tierInput.text?.toString()?.trim().orEmpty()
+        val groupCode = if (psdGroupMode) contract.ifBlank { tier } else ""
         val data = ReceiptData(
             treasuryNumber = binding.treasuryInput.text?.toString()?.trim().orEmpty(),
             clientName = if (psdGroupMode) "" else binding.nameInput.text?.toString()?.trim().orEmpty(),
-            contractNumber = contract,
-            // Group/PSD receipts use the SAME paper code in both database fields.
-            tierReference = if (psdGroupMode) contract else binding.tierInput.text?.toString()?.trim().orEmpty(),
+            contractNumber = if (psdGroupMode) groupCode else contract,
+            // PSD uses one corrected editable paper code in BOTH database fields.
+            tierReference = if (psdGroupMode) groupCode else tier,
             amount = binding.amountInput.text?.toString()?.trim().orEmpty()
         )
         if (data.detectedCount == 0) {
@@ -474,6 +454,7 @@ class ReceiptScannerActivity : AppCompatActivity() {
         recycleCapturedBitmapExcept(null)
         capturedBitmap = null
         psdGroupMode = false
+        binding.nameInputLayout.visibility = View.VISIBLE
     }
 
     private fun toggleTorch() {

@@ -11,8 +11,8 @@ android {
         applicationId = "com.scan2cell.app"
         minSdk = 24
         targetSdk = 35
-        versionCode = 135
-        versionName = "1.3.5-psd-group-support"
+        versionCode = 136
+        versionName = "1.3.6-psd-ocr-fast"
     }
 
     signingConfigs {

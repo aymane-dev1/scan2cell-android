@@ -147,14 +147,14 @@ object ReceiptParser {
             // Normal case: J1ME0000303
             Regex("(?<![A-Z0-9])([A-Z0-9]{7,20})(?![A-Z0-9])")
                 .findAll(upper)
-                .map { it.groupValues[1] }
+                .map { normalizePsdGroupCode(it.groupValues[1]) }
                 .filter(::plausible)
                 .forEach { found += it }
 
             // OCR can split the code: J1ME 0000303 / J1ME-0000303.
             Regex("(?<![A-Z0-9])([A-Z0-9]{2,8}(?:[ ._-]+[A-Z0-9]{2,10}){1,3})(?![A-Z0-9])")
                 .findAll(upper)
-                .map { it.groupValues[1].replace(Regex("[^A-Z0-9]"), "") }
+                .map { normalizePsdGroupCode(it.groupValues[1]) }
                 .filter(::plausible)
                 .forEach { found += it }
 
@@ -192,6 +192,70 @@ object ReceiptParser {
             contract.any { it.isDigit() }
     }
 
+    /**
+     * Treasury codes normally begin with numeric characters (014...). OCR can
+     * confuse only those leading digits with O/I/L etc. We correct just the
+     * numeric prefix and leave the alphanumeric suffix untouched.
+     */
+    private fun normalizeTreasuryCandidate(value: String): String {
+        val compact = value.uppercase().replace(Regex("[^A-Z0-9]"), "")
+        if (compact.isBlank()) return ""
+
+        val digitMap = mapOf(
+            'O' to '0', 'Q' to '0',
+            'I' to '1', 'L' to '1',
+            'Z' to '2', 'S' to '5',
+            'G' to '6', 'T' to '7', 'B' to '8'
+        )
+        val chars = compact.toCharArray()
+        for (i in 0 until minOf(3, chars.size)) {
+            chars[i] = digitMap[chars[i]] ?: chars[i]
+        }
+        return String(chars)
+    }
+
+    /**
+     * PSD group IDs are alphanumeric prefixes followed by a long numeric tail.
+     * Example: J1ME0000303. In the numeric tail ML Kit commonly reads 0 as O/Q
+     * (or 1 as I/L). Correct those confusions WITHOUT touching the prefix.
+     *
+     * J1MEO000303 -> J1ME0000303
+     */
+    private fun normalizePsdGroupCode(value: String): String {
+        val compact = value.uppercase().replace(Regex("[^A-Z0-9]"), "")
+        if (compact.isBlank()) return ""
+
+        val digitMap = mapOf(
+            'O' to '0', 'Q' to '0',
+            'I' to '1', 'L' to '1',
+            'Z' to '2', 'S' to '5',
+            'G' to '6', 'T' to '7', 'B' to '8'
+        )
+
+        // Walk from the right while characters look numeric / digit-confusable.
+        var suffixStart = compact.length
+        var i = compact.lastIndex
+        while (i >= 0) {
+            val c = compact[i]
+            if (c.isDigit() || digitMap.containsKey(c)) {
+                suffixStart = i
+                i--
+            } else {
+                break
+            }
+        }
+
+        // Avoid rewriting short ambiguous suffixes. Real PSD IDs have a long
+        // numeric tail, usually 6+ characters.
+        if (compact.length - suffixStart < 5) return compact
+
+        val prefix = compact.substring(0, suffixStart)
+        val suffix = buildString {
+            compact.substring(suffixStart).forEach { c -> append(digitMap[c] ?: c) }
+        }
+        return prefix + suffix
+    }
+
     private fun findTreasuryNumber(lines: List<String>): String {
         data class Candidate(val value: String, val score: Int, val index: Int)
 
@@ -205,9 +269,7 @@ object ReceiptParser {
         lines.forEachIndexed { index, line ->
             val folded = fold(line)
             tokenRegex.findAll(line.uppercase()).forEach { match ->
-                val raw = match.groupValues[1]
-                    .replace(" ", "")
-                    .trim()
+                val raw = normalizeTreasuryCandidate(match.groupValues[1])
 
                 if (!raw.any { it.isDigit() } || !raw.any { it.isLetter() }) {
                     return@forEach

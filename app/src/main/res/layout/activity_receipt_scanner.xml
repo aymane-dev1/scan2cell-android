@@ -16,7 +16,7 @@
     </LinearLayout>
 
     <LinearLayout android:id="@+id/cameraControls" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_gravity="bottom" android:gravity="center" android:orientation="vertical" android:padding="24dp" android:background="#B0000000">
-        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginBottom="13dp" android:text="One photo detects the 5 receipt fields" android:textColor="#D9E0EC" android:textSize="12sp" />
+        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginBottom="13dp" android:text="One photo reads Treasury + Contract + Amount" android:textColor="#D9E0EC" android:textSize="12sp" />
         <ImageButton android:id="@+id/captureButton" android:layout_width="78dp" android:layout_height="78dp" android:background="@drawable/bg_camera_button" android:contentDescription="Capture receipt" />
     </LinearLayout>
 
@@ -29,7 +29,7 @@
             <com.google.android.material.textfield.TextInputLayout style="@style/Widget.Material3.TextInputLayout.OutlinedBox" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:hint="N° Trésorerie">
                 <com.google.android.material.textfield.TextInputEditText android:id="@+id/treasuryInput" android:layout_width="match_parent" android:layout_height="wrap_content" android:inputType="text" android:singleLine="true" />
             </com.google.android.material.textfield.TextInputLayout>
-            <com.google.android.material.textfield.TextInputLayout style="@style/Widget.Material3.TextInputLayout.OutlinedBox" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:hint="Nom &amp; Prénom">
+            <com.google.android.material.textfield.TextInputLayout android:id="@+id/nameInputLayout" style="@style/Widget.Material3.TextInputLayout.OutlinedBox" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:hint="Nom &amp; Prénom">
                 <com.google.android.material.textfield.TextInputEditText android:id="@+id/nameInput" android:layout_width="match_parent" android:layout_height="wrap_content" android:inputType="textPersonName" android:singleLine="true" />
             </com.google.android.material.textfield.TextInputLayout>
             <com.google.android.material.textfield.TextInputLayout style="@style/Widget.Material3.TextInputLayout.OutlinedBox" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:hint="N° Contrat">

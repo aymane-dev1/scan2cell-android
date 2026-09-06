@@ -216,7 +216,7 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        setBusy(true, "Adding receipt to the Reçus sheet…")
+        setBusy(true, "Sending receipt to Excel…")
 
         lifecycleScope.launch {
             try {
@@ -224,7 +224,7 @@ class MainActivity : AppCompatActivity() {
                     sendReceiptWithRediscovery(connection, receipt)
                 }
                 setBusy(false)
-                showMessage("Receipt added to ${result.address}.")
+                showMessage("Receipt sent to Excel.")
                 updateUiFromSavedPairing(reachable = true)
             } catch (error: Exception) {
                 setBusy(false)
