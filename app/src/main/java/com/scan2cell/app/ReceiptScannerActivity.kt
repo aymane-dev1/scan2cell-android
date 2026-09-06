@@ -147,21 +147,90 @@ class ReceiptScannerActivity : AppCompatActivity() {
             .addOnSuccessListener { recognized ->
                 val primary = ReceiptParser.parse(recognized)
 
-                // Fast path: the fraud check only requires Treasury + Contract + Amount.
-                // Tier is best-effort on standard PID receipts and is automatically
-                // mirrored from the PSD code on group receipts. Do not waste extra
-                // OCR passes chasing an optional Tier.
-                if (hasRequiredFields(primary)) {
-                    showReview(primary)
-                } else {
-                    recognizeBottomReferences(bitmap, primary)
-                }
+                // Treasury is the most important routing key. v1.3.6 tried to
+                // auto-correct letters inside it and caused regressions. Instead,
+                // run ONE small dedicated OCR pass over the top receipt header and
+                // keep PSD-specific corrections completely separate.
+                recognizeTreasuryHeader(bitmap, primary)
             }
             .addOnFailureListener { error ->
                 showLoading(false)
                 binding.captureButton.isEnabled = true
                 showMessage("Receipt recognition failed: ${error.message}")
             }
+    }
+
+    private fun recognizeTreasuryHeader(bitmap: Bitmap, primary: ReceiptData) {
+        showLoading(true, "Checking N° Trésorerie…")
+
+        // Treasury is always in the upper receipt area. A small crop gives ML Kit
+        // many more pixels per character without reprocessing the whole document.
+        val header = cropAndUpscale(
+            source = bitmap,
+            leftFraction = 0.12f,
+            topFraction = 0.02f,
+            rightFraction = 0.98f,
+            bottomFraction = 0.38f,
+            scale = 1.85f
+        )
+
+        recognizer.process(InputImage.fromBitmap(header, 0))
+            .addOnSuccessListener { topText ->
+                val topTreasury = ReceiptParser.parseTreasuryOnly(topText)
+                recycleIfTemporary(header)
+
+                val treasury = chooseTreasuryCandidate(
+                    fullPage = primary.treasuryNumber,
+                    topCrop = topTreasury
+                )
+                continueAfterTreasury(bitmap, primary.copy(treasuryNumber = treasury))
+            }
+            .addOnFailureListener {
+                recycleIfTemporary(header)
+                continueAfterTreasury(bitmap, primary)
+            }
+    }
+
+    private fun continueAfterTreasury(bitmap: Bitmap, data: ReceiptData) {
+        if (hasRequiredFields(data)) {
+            showReview(data)
+        } else {
+            recognizeBottomReferences(bitmap, data)
+        }
+    }
+
+    private fun chooseTreasuryCandidate(fullPage: String, topCrop: String): String {
+        val full = fullPage.trim().uppercase()
+        val top = topCrop.trim().uppercase()
+
+        if (top.isBlank()) return full
+        if (full.isBlank()) return top
+        if (top == full) return top
+
+        // If the only disagreement is the classic leading O/Q versus numeric 0,
+        // choose the actually numeric rendering. Do NOT rewrite other characters.
+        fun zeroVariant(value: String): String {
+            if (value.isBlank()) return value
+            return when (value.first()) {
+                'O', 'Q' -> "0" + value.drop(1)
+                else -> value
+            }
+        }
+        val topZero = zeroVariant(top)
+        val fullZero = zeroVariant(full)
+        if (topZero == fullZero) {
+            return when {
+                top.startsWith("0") -> top
+                full.startsWith("0") -> full
+                else -> top
+            }
+        }
+
+        // The top crop contains far fewer distracting codes than the whole page,
+        // so prefer it when it still looks like a proper alphanumeric treasury ID.
+        val topLooksValid = top.length in 6..12 &&
+            top.any { it.isDigit() } && top.any { it.isLetter() }
+        return if (topLooksValid) top else full
     }
 
     private fun hasRequiredFields(data: ReceiptData): Boolean {

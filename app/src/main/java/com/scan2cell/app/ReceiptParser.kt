@@ -69,6 +69,19 @@ object ReceiptParser {
     }
 
     /**
+     * Used by the scanner's dedicated TOP receipt pass. Keeping treasury OCR
+     * separate from PSD/reference correction avoids turning legitimate treasury
+     * letters into digits.
+     */
+    fun parseTreasuryOnly(recognized: Text): String {
+        val lines = recognized.textBlocks
+            .flatMap { block -> block.lines.map { it.text } }
+            .ifEmpty { recognized.text.lines() }
+
+        return findTreasuryNumber(lines)
+    }
+
+    /**
      * Used by the scanner's high-resolution bottom-zone OCR pass.
      * This deliberately returns only the two long paper identifiers.
      */
@@ -192,27 +205,6 @@ object ReceiptParser {
             contract.any { it.isDigit() }
     }
 
-    /**
-     * Treasury codes normally begin with numeric characters (014...). OCR can
-     * confuse only those leading digits with O/I/L etc. We correct just the
-     * numeric prefix and leave the alphanumeric suffix untouched.
-     */
-    private fun normalizeTreasuryCandidate(value: String): String {
-        val compact = value.uppercase().replace(Regex("[^A-Z0-9]"), "")
-        if (compact.isBlank()) return ""
-
-        val digitMap = mapOf(
-            'O' to '0', 'Q' to '0',
-            'I' to '1', 'L' to '1',
-            'Z' to '2', 'S' to '5',
-            'G' to '6', 'T' to '7', 'B' to '8'
-        )
-        val chars = compact.toCharArray()
-        for (i in 0 until minOf(3, chars.size)) {
-            chars[i] = digitMap[chars[i]] ?: chars[i]
-        }
-        return String(chars)
-    }
 
     /**
      * PSD group IDs are alphanumeric prefixes followed by a long numeric tail.
@@ -269,7 +261,9 @@ object ReceiptParser {
         lines.forEachIndexed { index, line ->
             val folded = fold(line)
             tokenRegex.findAll(line.uppercase()).forEach { match ->
-                val raw = normalizeTreasuryCandidate(match.groupValues[1])
+                val raw = match.groupValues[1]
+                    .replace(" ", "")
+                    .trim()
 
                 if (!raw.any { it.isDigit() } || !raw.any { it.isLetter() }) {
                     return@forEach
