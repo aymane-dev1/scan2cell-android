@@ -25,13 +25,15 @@ object ReceiptParser {
             .filter { it.isNotBlank() }
 
         val treasury = findTreasuryNumber(cleaned)
-        val psdCode = findPsdGroupCode(cleaned, treasury)
-        val references = if (psdCode.isNotBlank()) {
-            psdCode to psdCode
+        val psdReferences = findPsdReferences(cleaned, treasury)
+        val references = if (psdReferences.first.isNotBlank()) {
+            psdReferences
         } else {
             findReferencePair(cleaned)
         }
-        val name = if (psdCode.isNotBlank()) "" else findClientName(cleaned)
+        val psdSingleGroup = psdReferences.first.isNotBlank() &&
+            psdReferences.first.equals(psdReferences.second, ignoreCase = true)
+        val name = if (psdSingleGroup) "" else findClientName(cleaned)
         val amount = findAmount(cleaned)
 
         return ReceiptData(
@@ -58,7 +60,7 @@ object ReceiptParser {
         // A PSD/group receipt intentionally has ONE alphanumeric code used for both
         // Contract and Tier. Do not let the normal two-number geometry parser
         // overwrite that code with unrelated footer/date digits.
-        if (isPsdGroupReceipt(base)) return base
+        if (isPsdReceipt(base)) return base
 
         val geometric = findReferencePairByGeometry(recognized)
 
@@ -92,8 +94,8 @@ object ReceiptParser {
 
         // The dedicated bottom crop is ideal for group/PSD receipts because the
         // PSD label and its single code are usually in this exact area.
-        val psdCode = findPsdGroupCode(lines)
-        if (psdCode.isNotBlank()) return psdCode to psdCode
+        val psdReferences = findPsdReferences(lines)
+        if (psdReferences.first.isNotBlank()) return psdReferences
 
         val geometric = findReferencePairByGeometry(recognized)
         if (geometric.first.isNotBlank() && geometric.second.isNotBlank()) {
@@ -126,12 +128,16 @@ object ReceiptParser {
      * We deliberately search only near a PSD label so the top N° Trésorerie code
      * cannot be mistaken for the group reference.
      */
-    private fun findPsdGroupCode(
+    /**
+     * PSD receipts supported:
+     * 1) Group receipt: one code, e.g. J1ME0000303 -> same code in Contract + Tier.
+     * 2) Individual group member: two codes, e.g. CWSI0000329 / 00007060554.
+     *    Both are preserved; Excel resolves which one is the actual Contract.
+     */
+    private fun findPsdReferences(
         lines: List<String>,
         treasuryToExclude: String = ""
-    ): String {
-        data class Candidate(val value: String, val score: Int, val index: Int)
-
+    ): Pair<String, String> {
         val labelIndexes = lines.mapIndexedNotNull { index, line ->
             val f = fold(line)
             val compact = f.replace(Regex("[^a-z0-9]"), "")
@@ -141,59 +147,79 @@ object ReceiptParser {
                 compact == "p5d" || compact.startsWith("p5d")
             ) index else null
         }
-        if (labelIndexes.isEmpty()) return ""
+        if (labelIndexes.isEmpty()) return "" to ""
 
-        fun plausible(value: String): Boolean {
+        data class AlphaCandidate(val value: String, val index: Int, val score: Int)
+        data class NumericCandidate(val value: String, val index: Int, val score: Int)
+
+        val alpha = mutableListOf<AlphaCandidate>()
+        val numeric = mutableListOf<NumericCandidate>()
+
+        fun distanceToPsd(index: Int): Int =
+            labelIndexes.minOf { kotlin.math.abs(it - index) }
+
+        fun plausibleAlpha(value: String): Boolean {
             if (value.length !in 7..20) return false
-            if (treasuryToExclude.isNotBlank() && value == treasuryToExclude.uppercase()) return false
-            if (value.count { it.isDigit() } < 3) return false
-            if (value.count { it.isLetter() } < 1) return false
+            if (treasuryToExclude.isNotBlank() && value.equals(treasuryToExclude, ignoreCase = true)) return false
+            if (!value.any { it.isLetter() } || !value.any { it.isDigit() }) return false
             if (value.startsWith("PSD") || value.startsWith("P5D")) return false
-            if (value in setOf("MICROFINANCE", "ENCAISSEMENT", "SIGNATURE", "CLIENT")) return false
             return true
         }
 
-        fun extract(line: String): List<String> {
-            val upper = line.uppercase()
-            val found = mutableListOf<String>()
-
-            // Normal case: J1ME0000303
-            Regex("(?<![A-Z0-9])([A-Z0-9]{7,20})(?![A-Z0-9])")
-                .findAll(upper)
-                .map { normalizePsdGroupCode(it.groupValues[1]) }
-                .filter(::plausible)
-                .forEach { found += it }
-
-            // OCR can split the code: J1ME 0000303 / J1ME-0000303.
-            Regex("(?<![A-Z0-9])([A-Z0-9]{2,8}(?:[ ._-]+[A-Z0-9]{2,10}){1,3})(?![A-Z0-9])")
-                .findAll(upper)
-                .map { normalizePsdGroupCode(it.groupValues[1]) }
-                .filter(::plausible)
-                .forEach { found += it }
-
-            return found.distinct()
-        }
-
-        val candidates = mutableListOf<Candidate>()
-
         lines.forEachIndexed { index, line ->
-            val nearest = labelIndexes.minOf { kotlin.math.abs(it - index) }
-            if (nearest > 3) return@forEachIndexed
+            val distance = distanceToPsd(index)
+            if (distance > 4) return@forEachIndexed
+            val upper = line.uppercase()
 
-            extract(line).forEach { value ->
-                var score = 100 - nearest * 20
-                if (value.length in 10..12) score += 20
-                if (index >= labelIndexes.minOrNull()!!) score += 8
-                if (line.uppercase().contains("PSD")) score += 15
-                candidates += Candidate(value, score, index)
-            }
+            // Alphanumeric group code such as J1ME0000303 / CWSI0000329.
+            Regex("(?<![A-Z0-9])([A-Z]{1,6}[A-Z0-9]{5,18})(?![A-Z0-9])")
+                .findAll(upper)
+                .forEach { match ->
+                    val value = normalizePsdGroupCode(match.groupValues[1])
+                    if (!plausibleAlpha(value)) return@forEach
+                    var score = 100 - distance * 15
+                    if (value.length in 10..12) score += 20
+                    if (line.contains("/")) score += 10
+                    alpha += AlphaCandidate(value, index, score)
+                }
+
+            // Numeric member code such as 00007060554.
+            Regex("(?<![A-Z0-9])([0-9OoQqIiLlZzSsGgBbTt]{9,14})(?![A-Z0-9])")
+                .findAll(line)
+                .forEach { match ->
+                    val value = normalizeIdentifier(match.groupValues[1])
+                    if (value.length !in 9..14 || !value.startsWith("0") || looksLikePhoneNumber(value)) {
+                        return@forEach
+                    }
+                    var score = 100 - distance * 15
+                    if (value.length == 11) score += 25
+                    if (value.startsWith("000")) score += 10
+                    if (line.contains("/")) score += 10
+                    numeric += NumericCandidate(value, index, score)
+                }
         }
 
-        return candidates
-            .sortedWith(compareByDescending<Candidate> { it.score }.thenBy { it.index })
-            .firstOrNull()
-            ?.value
-            .orEmpty()
+        val bestAlpha = alpha.distinctBy { it.value }.maxByOrNull { it.score }?.value.orEmpty()
+        val bestNumeric = numeric.distinctBy { it.value }.maxByOrNull { it.score }?.value.orEmpty()
+
+        // Individual member: preserve both distinct paper codes.
+        if (bestAlpha.isNotBlank() && bestNumeric.isNotBlank()) {
+            return bestAlpha to bestNumeric
+        }
+
+        // Group receipt: one PSD code is stored in both fields.
+        if (bestAlpha.isNotBlank()) {
+            return bestAlpha to bestAlpha
+        }
+
+        return "" to ""
+    }
+
+    private fun isPsdReceipt(data: ReceiptData): Boolean {
+        val contract = data.contractNumber.trim()
+        val tier = data.tierReference.trim()
+        return (contract.any { it.isLetter() } && contract.any { it.isDigit() }) ||
+            (tier.any { it.isLetter() } && tier.any { it.isDigit() })
     }
 
     private fun isPsdGroupReceipt(data: ReceiptData): Boolean {
@@ -224,27 +250,27 @@ object ReceiptParser {
             'G' to '6', 'T' to '7', 'B' to '8'
         )
 
-        // Walk from the right while characters look numeric / digit-confusable.
-        var suffixStart = compact.length
-        var i = compact.lastIndex
-        while (i >= 0) {
-            val c = compact[i]
-            if (c.isDigit() || digitMap.containsKey(c)) {
-                suffixStart = i
-                i--
-            } else {
-                break
-            }
-        }
+        // Keep the alphabetic group prefix intact. This matters for real codes
+        // such as CWSI0000329 where the final I belongs to the prefix and must
+        // NOT be rewritten to 1.
+        //
+        // Find a long numeric-looking tail that starts with a real digit.
+        val tail = Regex("([0-9][0-9OQILZSGTB]{4,})$").find(compact)
+            ?: return compact
 
-        // Avoid rewriting short ambiguous suffixes. Real PSD IDs have a long
-        // numeric tail, usually 6+ characters.
-        if (compact.length - suffixStart < 5) return compact
+        var suffixStart = tail.range.first
+
+        // Classic OCR error: the first zero of the numeric tail can be O/Q.
+        // Include only O/Q before the real digit tail; do not absorb I/L/S/etc.
+        if (suffixStart > 0 && compact[suffixStart - 1] in setOf('O', 'Q')) {
+            suffixStart -= 1
+        }
 
         val prefix = compact.substring(0, suffixStart)
         val suffix = buildString {
             compact.substring(suffixStart).forEach { c -> append(digitMap[c] ?: c) }
         }
+
         return prefix + suffix
     }
 

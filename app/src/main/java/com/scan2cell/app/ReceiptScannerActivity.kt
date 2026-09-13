@@ -36,6 +36,7 @@ class ReceiptScannerActivity : AppCompatActivity() {
     private var torchEnabled = false
     private var capturedBitmap: Bitmap? = null
     private var psdGroupMode = false
+    private var psdMemberMode = false
     private var syncingPsdCode = false
     private val recognizer by lazy { TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS) }
 
@@ -407,12 +408,20 @@ class ReceiptScannerActivity : AppCompatActivity() {
         binding.reviewPanel.visibility = View.VISIBLE
         binding.flashButton.visibility = View.GONE
         psdGroupMode = isPsdGroupReceipt(data)
+        psdMemberMode = isPsdMemberReceipt(data)
 
-        binding.titleText.text = if (psdGroupMode) "Group receipt • PSD" else "Check receipt"
-        binding.subtitleText.text = if (psdGroupMode) {
-            "One PSD code is used for both Contract and Tier. Edit either field to correct both."
-        } else {
-            "Check the values read from the paper before sending."
+        binding.titleText.text = when {
+            psdGroupMode -> "Group receipt • PSD"
+            psdMemberMode -> "Group member receipt • PSD"
+            else -> "Check receipt"
+        }
+        binding.subtitleText.text = when {
+            psdGroupMode ->
+                "One PSD code is used for both Contract and Tier. Edit either field to correct both."
+            psdMemberMode ->
+                "Two PSD-side codes detected. Excel resolves which one is the Contract from the base."
+            else ->
+                "Check the values read from the paper before sending."
         }
 
         binding.treasuryInput.setText(data.treasuryNumber)
@@ -435,9 +444,24 @@ class ReceiptScannerActivity : AppCompatActivity() {
                 data.amount
             ).count { it.isNotBlank() }
             binding.detectedStatus.text = if (requiredCount == 3) {
-                "PSD group • ready • code copied to Contract + Tier"
+                "PSD group • ready • one code copied to Contract + Tier"
             } else {
                 "$requiredCount / 3 required fields detected • review below"
+            }
+            return
+        }
+
+        if (psdMemberMode) {
+            val requiredCount = listOf(
+                data.treasuryNumber,
+                data.contractNumber,
+                data.tierReference,
+                data.amount
+            ).count { it.isNotBlank() }
+            binding.detectedStatus.text = if (requiredCount == 4) {
+                "PSD member • 2 codes detected • Excel resolves Contract automatically"
+            } else {
+                "$requiredCount / 4 PSD member fields detected • review below"
             }
             return
         }
@@ -462,6 +486,16 @@ class ReceiptScannerActivity : AppCompatActivity() {
             contract.equals(tier, ignoreCase = true) &&
             contract.any { it.isLetter() } &&
             contract.any { it.isDigit() }
+    }
+
+    private fun isPsdMemberReceipt(data: ReceiptData): Boolean {
+        val contract = data.contractNumber.trim()
+        val tier = data.tierReference.trim()
+        if (contract.isBlank() || tier.isBlank()) return false
+        if (contract.equals(tier, ignoreCase = true)) return false
+        val contractAlphaNumeric = contract.any { it.isLetter() } && contract.any { it.isDigit() }
+        val tierAlphaNumeric = tier.any { it.isLetter() } && tier.any { it.isDigit() }
+        return contractAlphaNumeric.xor(tierAlphaNumeric)
     }
 
     private fun mirrorPsdCode(currentTarget: String, newValue: String, toTier: Boolean) {
@@ -518,11 +552,12 @@ class ReceiptScannerActivity : AppCompatActivity() {
         binding.flashButton.visibility = View.VISIBLE
         binding.captureButton.isEnabled = true
         binding.titleText.text = "Receipt scanner"
-        binding.subtitleText.text = "Fit the full receipt inside the frame • PID + PSD supported"
+        binding.subtitleText.text = "Fit the full receipt inside the frame • PID + PSD + PSD member supported"
         binding.receiptImage.setImageDrawable(null)
         recycleCapturedBitmapExcept(null)
         capturedBitmap = null
         psdGroupMode = false
+        psdMemberMode = false
         binding.nameInputLayout.visibility = View.VISIBLE
     }
 

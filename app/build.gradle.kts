@@ -11,8 +11,8 @@ android {
         applicationId = "com.scan2cell.app"
         minSdk = 24
         targetSdk = 35
-        versionCode = 137
-        versionName = "1.3.7-treasury-reliability-fix"
+        versionCode = 138
+        versionName = "1.3.8-psd-member-support"
     }
 
     signingConfigs {
